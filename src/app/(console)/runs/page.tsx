@@ -72,14 +72,14 @@ export default function RunsPage(): React.JSX.Element {
         }
       />
 
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
-        <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr_auto] gap-3 border-b border-[var(--border)] px-4 py-3 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
-          <span>Run</span>
-          <span>Status</span>
-          <span>Mode</span>
-          <span>Pages</span>
-          <span>Created</span>
-          <span className="w-8">Actions</span>
+      <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+        <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr_5rem] gap-3 border-b border-[var(--border)] px-4 py-3 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+          <span className="min-w-0 truncate">Run</span>
+          <span className="min-w-0 truncate">Status</span>
+          <span className="min-w-0 truncate">Mode</span>
+          <span className="min-w-0 truncate">Pages</span>
+          <span className="min-w-0 truncate">Created</span>
+          <span className="truncate text-center">Actions</span>
         </div>
 
         {loading ? (
@@ -97,7 +97,7 @@ export default function RunsPage(): React.JSX.Element {
           runs.map((run) => (
             <div
               key={run.id}
-              className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr_auto] gap-3 border-b border-[var(--border)] px-4 py-3 text-sm transition-colors hover:bg-[var(--surface-raised)]"
+              className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr_5rem] gap-3 border-b border-[var(--border)] px-4 py-3 text-sm transition-colors hover:bg-[var(--surface-raised)]"
             >
               <Link href={`/runs/${run.id}`} className="contents">
                 <span className="truncate text-[var(--text-strong)]">{run.filename}</span>
@@ -106,7 +106,7 @@ export default function RunsPage(): React.JSX.Element {
                 <span className="text-[var(--text)]">{run.pageCount}</span>
                 <span className="text-[var(--text-muted)]">{formatDate(run.createdAt)}</span>
               </Link>
-              <div className="flex w-8 items-center justify-center">
+              <div className="flex min-w-0 items-center justify-center">
                 <button
                   type="button"
                   onClick={(e) => void handleDelete(e, run)}

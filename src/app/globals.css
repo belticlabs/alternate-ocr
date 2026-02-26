@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f3ee;
+  --surface-raised: #f8f7f2;
+  --surface: #ffffff;
+  --border: #ddddd3;
+  --text-strong: #18181a;
+  --text: #26272d;
+  --text-muted: #686a74;
+  --accent: #0f7b80;
+  --accent-strong: #0b6266;
+  --danger: #b42318;
+  --success: #166534;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-space-grotesk);
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  font-family: var(--font-manrope), "Segoe UI", sans-serif;
+  min-height: 100vh;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 35%, transparent) transparent;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 25%, white);
+}

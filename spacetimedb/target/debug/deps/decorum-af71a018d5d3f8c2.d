@@ -1,0 +1,11 @@
+/Users/pranavkarra/belticlabs/glm-ocr/spacetimedb/target/debug/deps/decorum-af71a018d5d3f8c2.d: /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/lib.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/canonical.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/cmp.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/constraint.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/hash.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/primitive.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/proxy.rs
+
+/Users/pranavkarra/belticlabs/glm-ocr/spacetimedb/target/debug/deps/libdecorum-af71a018d5d3f8c2.rmeta: /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/lib.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/canonical.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/cmp.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/constraint.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/hash.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/primitive.rs /Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/proxy.rs
+
+/Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/lib.rs:
+/Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/canonical.rs:
+/Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/cmp.rs:
+/Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/constraint.rs:
+/Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/hash.rs:
+/Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/primitive.rs:
+/Users/pranavkarra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/decorum-0.3.1/src/proxy.rs:

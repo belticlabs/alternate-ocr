@@ -18,6 +18,7 @@
   --color-background: var(--background);
   --font-sans: var(--font-manrope);
   --font-mono: var(--font-space-grotesk);
+  --font-serif: var(--font-serif);
 }
 
 body {

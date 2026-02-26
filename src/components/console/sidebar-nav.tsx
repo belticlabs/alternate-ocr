@@ -25,19 +25,20 @@ export function SidebarNav(): React.JSX.Element {
       )}
     >
       <div className="flex h-full min-w-0 flex-col px-3 py-5">
-        <div className={clsx("mb-6 flex items-center gap-3", collapsed ? "justify-center px-0" : "px-2")}>
-          <div className="relative size-8 shrink-0 overflow-hidden rounded-lg">
+        <div className={clsx("mb-6 flex items-start gap-3", collapsed ? "justify-center px-0" : "px-2")}>
+          <div className="relative size-10 shrink-0 overflow-hidden rounded-lg">
             <Image
               src="/logo.png"
               alt=""
-              width={32}
-              height={32}
+              width={40}
+              height={40}
               className="object-contain"
             />
           </div>
           {!collapsed && (
-            <h1 className="min-w-0 truncate text-sm font-semibold tracking-wide text-[var(--text-strong)]">
-              BELTIC OCR PLAYGROUND
+            <h1 className="min-w-0 font-serif text-lg font-semibold leading-tight text-[var(--text-strong)]">
+              <span className="block">Beltic OCR</span>
+              <span className="block">Playground</span>
             </h1>
           )}
         </div>

@@ -19,6 +19,7 @@ export interface RunRecord {
   mode: RunMode;
   templateId: string;
   status: RunStatus;
+  provider?: RunProvider;
   filename: string;
   mimeType: string;
   byteSize: number;

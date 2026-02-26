@@ -204,19 +204,20 @@ export default function EvaluatePage(): React.JSX.Element {
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {([
-                  { value: "glm", label: "GLM" },
-                  { value: "mistral", label: "Mistral" },
+                  { value: "glm", label: "GLM", logo: "/zai.png" },
+                  { value: "mistral", label: "Mistral", logo: "/m-rainbow.png" },
                 ] as const).map((option) => (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => setProvider(option.value)}
-                    className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                    className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
                       provider === option.value
                         ? "border-[var(--accent)]/35 bg-[var(--accent)]/10 text-[var(--text-strong)]"
                         : "border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/20"
                     }`}
                   >
+                    <img src={option.logo} alt="" className="h-6 w-6 object-contain" aria-hidden />
                     {option.label}
                   </button>
                 ))}

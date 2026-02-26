@@ -64,6 +64,7 @@ export async function startRun(input: StartRunInput): Promise<{
     mode: input.mode,
     templateId: input.templateId,
     status: "queued",
+    provider: input.provider,
     filename: input.fileName,
     mimeType: input.mimeType,
     byteSize: input.fileBytes.length,

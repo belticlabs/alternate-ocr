@@ -6,6 +6,7 @@ import {
   TemplateRecord,
   TimingStats,
 } from "@/lib/types";
+import { inferProviderFromRawPayload } from "./infer-provider";
 import { PersistenceRepository, RunCreateInput } from "./repository";
 
 type Store = {
@@ -83,6 +84,7 @@ export class InMemoryRepository implements PersistenceRepository {
       mode: input.mode,
       templateId: input.templateId,
       status: input.status,
+      provider: input.provider,
       filename: input.filename,
       mimeType: input.mimeType,
       byteSize: input.byteSize,
@@ -170,13 +172,29 @@ export class InMemoryRepository implements PersistenceRepository {
   }
 
   async listRuns(): Promise<RunRecord[]> {
-    return Array.from(store.runs.values()).sort((a, b) =>
-      b.createdAt.localeCompare(a.createdAt)
-    );
+    const runs = Array.from(store.runs.values());
+    for (const run of runs) {
+      if (run.provider == null) {
+        const payload = store.payloads.get(run.id);
+        if (payload?.rawProviderJson) {
+          const inferred = inferProviderFromRawPayload(payload.rawProviderJson);
+          if (inferred) run.provider = inferred;
+        }
+      }
+    }
+    return runs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   async getRun(id: string): Promise<RunRecord | null> {
-    return store.runs.get(id) ?? null;
+    const run = store.runs.get(id) ?? null;
+    if (run && run.provider == null) {
+      const payload = store.payloads.get(id);
+      if (payload?.rawProviderJson) {
+        const inferred = inferProviderFromRawPayload(payload.rawProviderJson);
+        if (inferred) run.provider = inferred;
+      }
+    }
+    return run;
   }
 
   async getRunDetail(id: string): Promise<RunDetail | null> {

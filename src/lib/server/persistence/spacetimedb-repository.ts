@@ -9,6 +9,7 @@ import {
 } from "@/lib/types";
 import { parseSqlRows } from "@/lib/server/spacetimedb/sats";
 import { SpacetimeHttpClient } from "@/lib/server/spacetimedb/client";
+import { inferProviderFromRawPayload } from "./infer-provider";
 import { PersistenceRepository, RunCreateInput } from "./repository";
 
 type TemplateRow = {
@@ -27,6 +28,7 @@ type RunRow = {
   mode: "template" | "everything";
   template_id: string;
   status: RunRecord["status"];
+  provider?: string;
   filename: string;
   mime_type: string;
   byte_size: number;
@@ -62,11 +64,13 @@ function toTemplateRecord(row: TemplateRow): TemplateRecord {
 }
 
 function toRunRecord(row: RunRow): RunRecord {
+  const provider = row.provider === "glm" || row.provider === "mistral" ? row.provider : undefined;
   return {
     id: row.id,
     mode: row.mode,
     templateId: row.template_id,
     status: row.status,
+    provider,
     filename: row.filename,
     mimeType: row.mime_type,
     byteSize: Number(row.byte_size),
@@ -153,6 +157,7 @@ export class SpacetimeRepository implements PersistenceRepository {
         mode: input.mode,
         template_id: input.templateId,
         status: input.status,
+        provider: input.provider,
         filename: input.filename,
         mime_type: input.mimeType,
         byte_size: input.byteSize,
@@ -245,16 +250,43 @@ export class SpacetimeRepository implements PersistenceRepository {
   }
 
   async listRuns(): Promise<RunRecord[]> {
-    const rows = await this.firstStatement<RunRow>("SELECT * FROM run;");
-    return rows.map(toRunRecord).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const [runRows, payloadRows] = await Promise.all([
+      this.firstStatement<RunRow>("SELECT * FROM run;"),
+      this.firstStatement<RunPayloadRow>("SELECT * FROM run_payload;"),
+    ]);
+    const payloadByRunId = new Map(
+      payloadRows.map((row) => [row.run_id, toRunPayloadRecord(row)])
+    );
+    const runs = runRows.map((row) => {
+      const run = toRunRecord(row);
+      if (run.provider == null) {
+        const payload = payloadByRunId.get(run.id);
+        if (payload?.rawProviderJson) {
+          const inferred = inferProviderFromRawPayload(payload.rawProviderJson);
+          if (inferred) run.provider = inferred;
+        }
+      }
+      return run;
+    });
+    return runs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   async getRun(id: string): Promise<RunRecord | null> {
     const rows = await this.firstStatement<RunRow>(
       `SELECT * FROM run WHERE id='${escapeSqlString(id)}';`
     );
-
-    return rows[0] ? toRunRecord(rows[0]) : null;
+    const run = rows[0] ? toRunRecord(rows[0]) : null;
+    if (run && run.provider == null) {
+      const payloadRows = await this.firstStatement<RunPayloadRow>(
+        `SELECT * FROM run_payload WHERE run_id='${escapeSqlString(id)}';`
+      );
+      const payload = payloadRows[0] ? toRunPayloadRecord(payloadRows[0]) : null;
+      if (payload?.rawProviderJson) {
+        const inferred = inferProviderFromRawPayload(payload.rawProviderJson);
+        if (inferred) run.provider = inferred;
+      }
+    }
+    return run;
   }
 
   async getRunDetail(id: string): Promise<RunDetail | null> {

@@ -311,12 +311,18 @@ export default function TemplatesPage(): React.JSX.Element {
                       key={`ocr-${provider}`}
                       type="button"
                       onClick={() => setDraftOcrProvider(provider)}
-                      className={`rounded-lg border px-2 py-1.5 text-xs transition-colors ${
+                      className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs transition-colors ${
                         draftOcrProvider === provider
                           ? "border-[var(--accent)]/35 bg-[var(--accent)]/10 text-[var(--text-strong)]"
                           : "border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/20"
                       }`}
                     >
+                      <img
+                        src={provider === "mistral" ? "/m-rainbow.png" : "/zai.png"}
+                        alt=""
+                        className="h-4 w-4 object-contain"
+                        aria-hidden
+                      />
                       {provider === "mistral" ? "Mistral OCR" : "GLM OCR"}
                     </button>
                   ))}
@@ -330,12 +336,18 @@ export default function TemplatesPage(): React.JSX.Element {
                       key={`llm-${provider}`}
                       type="button"
                       onClick={() => setDraftLlmProvider(provider)}
-                      className={`rounded-lg border px-2 py-1.5 text-xs transition-colors ${
+                      className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs transition-colors ${
                         draftLlmProvider === provider
                           ? "border-[var(--accent)]/35 bg-[var(--accent)]/10 text-[var(--text-strong)]"
                           : "border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/20"
                       }`}
                     >
+                      <img
+                        src={provider === "mistral" ? "/m-rainbow.png" : "/zai.png"}
+                        alt=""
+                        className="h-4 w-4 object-contain"
+                        aria-hidden
+                      />
                       {provider === "mistral" ? "Mistral LLM" : "GLM-5"}
                     </button>
                   ))}

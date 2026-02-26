@@ -73,10 +73,11 @@ export default function RunsPage(): React.JSX.Element {
       />
 
       <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
-        <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr_5rem] gap-3 border-b border-[var(--border)] px-4 py-3 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+        <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.6fr_0.9fr_1fr_5rem] gap-3 border-b border-[var(--border)] px-4 py-3 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
           <span className="min-w-0 truncate">Run</span>
           <span className="min-w-0 truncate">Status</span>
           <span className="min-w-0 truncate">Mode</span>
+          <span className="min-w-0 truncate text-center">OCR</span>
           <span className="min-w-0 truncate">Pages</span>
           <span className="min-w-0 truncate">Created</span>
           <span className="truncate text-center">Actions</span>
@@ -97,12 +98,21 @@ export default function RunsPage(): React.JSX.Element {
           runs.map((run) => (
             <div
               key={run.id}
-              className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr_5rem] gap-3 border-b border-[var(--border)] px-4 py-3 text-sm transition-colors hover:bg-[var(--surface-raised)]"
+              className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.6fr_0.9fr_1fr_5rem] gap-3 border-b border-[var(--border)] px-4 py-3 text-sm transition-colors hover:bg-[var(--surface-raised)]"
             >
               <Link href={`/runs/${run.id}`} className="contents">
                 <span className="truncate text-[var(--text-strong)]">{run.filename}</span>
                 <span className="capitalize text-[var(--text)]">{run.status}</span>
                 <span className="capitalize text-[var(--text-muted)]">{run.mode}</span>
+                <span className="flex min-w-0 w-full items-center justify-center">
+                  {run.provider === "glm" ? (
+                    <img src="/zai.png" alt="GLM" title="GLM" className="h-7 w-7 shrink-0 object-contain" />
+                  ) : run.provider === "mistral" ? (
+                    <img src="/m-rainbow.png" alt="Mistral" title="Mistral" className="h-7 w-7 shrink-0 object-contain" />
+                  ) : (
+                    <span className="text-[var(--text-muted)]">—</span>
+                  )}
+                </span>
                 <span className="text-[var(--text)]">{run.pageCount}</span>
                 <span className="text-[var(--text-muted)]">{formatDate(run.createdAt)}</span>
               </Link>

@@ -13,6 +13,7 @@ export interface RunCreateInput {
   mode: "template" | "everything";
   templateId: string;
   status: RunStatus;
+  provider: "glm" | "mistral";
   filename: string;
   mimeType: string;
   byteSize: number;

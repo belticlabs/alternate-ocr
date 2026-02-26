@@ -30,6 +30,7 @@ export function serializeRun(run: RunRecord): RunDto {
     mode: run.mode,
     templateId: run.templateId,
     status: run.status,
+    provider: run.provider,
     filename: run.filename,
     mimeType: run.mimeType,
     byteSize: run.byteSize,

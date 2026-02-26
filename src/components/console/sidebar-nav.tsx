@@ -29,7 +29,7 @@ export function SidebarNav(): React.JSX.Element {
           <div className="relative size-10 shrink-0 overflow-hidden rounded-lg">
             <Image
               src="/logo.png"
-              alt=""
+              alt="Beltic OCR"
               width={40}
               height={40}
               className="object-contain"

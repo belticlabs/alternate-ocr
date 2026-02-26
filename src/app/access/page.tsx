@@ -1,10 +1,9 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function AccessPage(): React.JSX.Element {
+function AccessForm(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const from = searchParams.get("from") || "/";
@@ -66,5 +65,19 @@ export default function AccessPage(): React.JSX.Element {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function AccessPage(): React.JSX.Element {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[var(--background)]">
+          <div className="text-sm text-[var(--text-muted)]">Loading…</div>
+        </div>
+      }
+    >
+      <AccessForm />
+    </Suspense>
   );
 }

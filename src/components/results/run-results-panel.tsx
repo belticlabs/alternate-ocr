@@ -1,8 +1,10 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
+import DOMPurify from "dompurify";
+import { marked } from "marked";
 import { FieldCitation } from "@/lib/types";
 import { RunDetailDto } from "@/lib/api-types";
 
@@ -126,6 +128,61 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function formatBbox(bbox: [number, number, number, number]): string {
+  return `[${bbox[0].toFixed(4)}, ${bbox[1].toFixed(4)}, ${bbox[2].toFixed(4)}, ${bbox[3].toFixed(4)}]`;
+}
+
+const FULL_PAGE_BBOX_EPSILON = 0.015;
+
+function isFullPageBbox(bbox: [number, number, number, number]): boolean {
+  const [x1, y1, x2, y2] = bbox;
+  return (
+    x1 <= FULL_PAGE_BBOX_EPSILON &&
+    y1 <= FULL_PAGE_BBOX_EPSILON &&
+    x2 >= 1 - FULL_PAGE_BBOX_EPSILON &&
+    y2 >= 1 - FULL_PAGE_BBOX_EPSILON
+  );
+}
+
+function isRenderableBbox(bbox: [number, number, number, number]): boolean {
+  const [x1, y1, x2, y2] = bbox;
+  if (x2 <= x1 || y2 <= y1) {
+    return false;
+  }
+  return !isFullPageBbox(bbox);
+}
+
+function markdownToPreviewHtml(markdown: string): string {
+  const input = markdown || "";
+  const rendered = marked.parse(input, {
+    gfm: true,
+    breaks: true,
+  });
+  const renderedHtml = typeof rendered === "string" ? rendered : "";
+  const content = DOMPurify.sanitize(renderedHtml, {
+    USE_PROFILES: { html: true },
+    ALLOW_UNKNOWN_PROTOCOLS: false,
+  });
+
+  return `<!DOCTYPE html><html><head><style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 12px; font-family: ui-sans-serif, system-ui, sans-serif; color: #18181a; background: #fff; line-height: 1.45; }
+    h1,h2,h3,h4,h5,h6 { margin: 0.6em 0 0.35em; line-height: 1.2; }
+    p { margin: 0.5em 0; white-space: pre-wrap; word-break: break-word; }
+    a { color: #374151; text-decoration: underline; }
+    ul,ol { margin: 0.45em 0 0.65em 1.3em; }
+    li { margin: 0.2em 0; }
+    pre { margin: 0.75em 0; padding: 10px; overflow: auto; border: 1px solid #e4e4e7; border-radius: 8px; background: #f8fafc; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    table { margin: 0.75em 0; border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #e0e0e0; padding: 6px 10px; text-align: left; vertical-align: top; }
+    th { background: #f8fafc; font-weight: 600; }
+    blockquote { margin: 0.75em 0; padding: 0.5em 0.85em; border-left: 3px solid #d4d4d8; color: #4b5563; }
+    img { display: block; margin: 8px 0; max-width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+    hr { border: 0; border-top: 1px solid #e4e4e7; margin: 1em 0; }
+  </style></head><body>${content || "<p>No markdown output.</p>"}</body></html>`;
+}
+
 export function RunResultsPanel({
   runDetail,
   filePreviewUrl = null,
@@ -133,8 +190,14 @@ export function RunResultsPanel({
 }: RunResultsPanelProps): React.JSX.Element {
   const [activeFieldPath, setActiveFieldPath] = useState("");
   const [activePageIndex, setActivePageIndex] = useState(0);
+  const [showThumbnailStrip, setShowThumbnailStrip] = useState(true);
   const [showLayoutBlocks, setShowLayoutBlocks] = useState(true);
+  const [markdownView, setMarkdownView] = useState<"preview" | "raw">("preview");
   const [tableHeights, setTableHeights] = useState<Record<string, number>>({});
+  const [pdfPageImages, setPdfPageImages] = useState<string[]>([]);
+  const [isRenderingPdfPages, setIsRenderingPdfPages] = useState(false);
+  const previewScrollRef = useRef<HTMLDivElement | null>(null);
+  const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
@@ -149,19 +212,114 @@ export function RunResultsPanel({
 
   const payload = runDetail?.payload ?? null;
   const run = runDetail?.run ?? null;
-  const fields = payload?.extractedFields.fields ?? [];
+  const fields = useMemo(() => payload?.extractedFields.fields ?? [], [payload?.extractedFields.fields]);
   const resolvedActiveFieldPath = fields.some((f) => f.fieldPath === activeFieldPath)
     ? activeFieldPath
     : (fields[0]?.fieldPath ?? "");
   const activeField = fields.find((f) => f.fieldPath === resolvedActiveFieldPath) ?? fields[0] ?? null;
 
+  useEffect(() => {
+    let cancelled = false;
+    const localUrls: string[] = [];
+
+    async function renderPdfPages(): Promise<void> {
+      const isPdf = fileMimeType === "application/pdf" || run?.mimeType === "application/pdf";
+      if (!filePreviewUrl || !isPdf) {
+        setPdfPageImages((prev) => {
+          prev.forEach((url) => URL.revokeObjectURL(url));
+          return [];
+        });
+        return;
+      }
+
+      setIsRenderingPdfPages(true);
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
+        if (pdfjs.GlobalWorkerOptions.workerSrc !== workerSrc) {
+          pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+        }
+
+        const loadingTask = pdfjs.getDocument({
+          url: filePreviewUrl,
+          isEvalSupported: false,
+        });
+        const pdf = await loadingTask.promise;
+        const nextImages: string[] = [];
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          if (cancelled) {
+            break;
+          }
+
+          const page = await pdf.getPage(pageNumber);
+          const viewport = page.getViewport({ scale: 1.35 });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.floor(viewport.width));
+          canvas.height = Math.max(1, Math.floor(viewport.height));
+          const context = canvas.getContext("2d", { alpha: false });
+          if (!context) {
+            continue;
+          }
+
+          await page.render({ canvas, canvasContext: context, viewport }).promise;
+          const blob = await new Promise<Blob | null>((resolve) => {
+            canvas.toBlob(resolve, "image/jpeg", 0.92);
+          });
+          if (!blob) {
+            continue;
+          }
+
+          const objectUrl = URL.createObjectURL(blob);
+          localUrls.push(objectUrl);
+          nextImages.push(objectUrl);
+        }
+
+        if (cancelled) {
+          localUrls.forEach((url) => URL.revokeObjectURL(url));
+          return;
+        }
+
+        setPdfPageImages((prev) => {
+          prev.forEach((url) => URL.revokeObjectURL(url));
+          return nextImages;
+        });
+      } catch {
+        if (!cancelled) {
+          setPdfPageImages((prev) => {
+            prev.forEach((url) => URL.revokeObjectURL(url));
+            return [];
+          });
+        } else {
+          localUrls.forEach((url) => URL.revokeObjectURL(url));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRenderingPdfPages(false);
+        }
+      }
+    }
+
+    void renderPdfPages();
+
+    return () => {
+      cancelled = true;
+      localUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [filePreviewUrl, fileMimeType, run?.mimeType]);
+
   const pages = useMemo(() => {
     if (payload?.layoutVisualization?.length) return payload.layoutVisualization;
+    if (pdfPageImages.length > 0) return pdfPageImages;
     if (filePreviewUrl && run?.mimeType.startsWith("image/")) return [filePreviewUrl];
     return [] as string[];
-  }, [payload?.layoutVisualization, filePreviewUrl, run?.mimeType]);
+  }, [payload?.layoutVisualization, pdfPageImages, filePreviewUrl, run?.mimeType]);
 
-  const safeActivePageIndex = Math.min(activePageIndex, Math.max(pages.length - 1, 0));
+  useEffect(() => {
+    setActivePageIndex((prev) => Math.min(prev, Math.max(pages.length - 1, 0)));
+  }, [pages.length]);
+
+  const safeActivePageIndex = Math.min(Math.max(activePageIndex, 0), Math.max(pages.length - 1, 0));
   const hasPageImages = pages.length > 0;
 
   const showPdfFallback =
@@ -169,11 +327,82 @@ export function RunResultsPanel({
   const showImageFallback =
     !hasPageImages && filePreviewUrl && (fileMimeType?.startsWith("image/") || run?.mimeType?.startsWith("image/"));
 
-  const visibleCitations = (activeField?.citations ?? []).filter(
-    (c: FieldCitation) => c.pageIndex === safeActivePageIndex
+  const scrollToPage = useCallback(
+    (pageIndex: number) => {
+      if (pages.length === 0) {
+        return;
+      }
+      const bounded = Math.max(0, Math.min(pageIndex, pages.length - 1));
+      setActivePageIndex(bounded);
+      pageRefs.current[bounded]?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+        inline: "nearest",
+      });
+    },
+    [pages.length]
   );
 
-  type RichBlock = { pageIndex: number; index: number; label: "image" | "table"; content: string };
+  useEffect(() => {
+    if (!previewScrollRef.current || pages.length <= 1) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestPage: { pageIndex: number; ratio: number } | null = null;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            continue;
+          }
+          const rawIndex = Number((entry.target as HTMLElement).dataset.pageIndex ?? Number.NaN);
+          if (!Number.isFinite(rawIndex)) {
+            continue;
+          }
+          if (!bestPage || entry.intersectionRatio > bestPage.ratio) {
+            bestPage = { pageIndex: rawIndex, ratio: entry.intersectionRatio };
+          }
+        }
+
+        if (bestPage) {
+          setActivePageIndex((prev) => (prev === bestPage.pageIndex ? prev : bestPage.pageIndex));
+        }
+      },
+      {
+        root: previewScrollRef.current,
+        threshold: [0.35, 0.6, 0.85],
+      }
+    );
+
+    pageRefs.current.forEach((node) => {
+      if (node) {
+        observer.observe(node);
+      }
+    });
+
+    return () => observer.disconnect();
+  }, [pages]);
+
+  const visibleCitationsByPage = useMemo(() => {
+    const byPage = new Map<number, FieldCitation[]>();
+    for (const citation of activeField?.citations ?? []) {
+      if (!isRenderableBbox(citation.bbox2d)) {
+        continue;
+      }
+      const inPage = byPage.get(citation.pageIndex) ?? [];
+      inPage.push(citation);
+      byPage.set(citation.pageIndex, inPage);
+    }
+    return byPage;
+  }, [activeField?.citations]);
+
+  type RichBlock = {
+    pageIndex: number;
+    index: number;
+    label: "image" | "table";
+    content: string;
+    bbox2d: [number, number, number, number];
+  };
 
   const richBlocks = useMemo((): RichBlock[] => {
     const pages = payload?.layoutDetails ?? [];
@@ -182,13 +411,25 @@ export function RunResultsPanel({
       pageBlocks.forEach((b, localIndex) => {
         const idx = b.index ?? localIndex;
         if (b.label === "table" && typeof b.content === "string" && b.content.length > 0) {
-          out.push({ pageIndex, index: idx, label: "table", content: b.content });
+          out.push({
+            pageIndex,
+            index: idx,
+            label: "table",
+            content: b.content,
+            bbox2d: b.bbox_2d ?? [0, 0, 0, 0],
+          });
         } else if (
           b.label === "image" &&
           typeof b.content === "string" &&
           (b.content as string).length > 0
         ) {
-          out.push({ pageIndex, index: idx, label: "image", content: b.content as string });
+          out.push({
+            pageIndex,
+            index: idx,
+            label: "image",
+            content: b.content as string,
+            bbox2d: b.bbox_2d ?? [0, 0, 0, 0],
+          });
         }
       });
     });
@@ -243,89 +484,118 @@ export function RunResultsPanel({
         <span>{(guaranteedRun.stats?.pagesPerSecond ?? 0).toFixed(2)} pages/s</span>
       </div>
 
-      {/* Half-and-half: document preview | extractions */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Left: document preview with optional thumbnail strip */}
-        <article className="flex min-h-0 flex-col rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-          {hasPageImages && pages.length > 1 ? (
-            <p className="mb-2 text-xs font-medium text-[var(--text-muted)]">
-              Page {safeActivePageIndex + 1} of {pages.length}
+      {/* Side by side: full document (all pages) | extractions */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.75fr)]">
+        {/* Left: full document, all pages in one scroll */}
+        <article className="flex min-h-0 flex-col rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 lg:max-h-[calc(100vh-11rem)]">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-[var(--text-muted)]">
+              {hasPageImages ? `Document · ${pages.length} page${pages.length === 1 ? "" : "s"}` : "Document Preview"}
             </p>
-          ) : null}
-          <div className="flex min-h-0 flex-1 gap-3">
-          {hasPageImages && pages.length > 1 ? (
-            <div className="flex shrink-0 flex-col gap-1.5 overflow-y-auto py-1">
-              {pages.map((src, index) => (
-                <button
-                  key={`thumb-${index}`}
-                  type="button"
-                  onClick={() => setActivePageIndex(index)}
-                  className={clsx(
-                    "block shrink-0 overflow-hidden rounded-lg border-2 transition-all",
-                    index === safeActivePageIndex
-                      ? "border-[var(--accent)] shadow-sm ring-1 ring-[var(--accent)]/20"
-                      : "border-transparent opacity-75 hover:opacity-100"
-                  )}
-                >
-                  <img
-                    src={src}
-                    alt={`Page ${index + 1}`}
-                    className="h-auto w-[72px] max-w-[72px] object-cover object-top"
-                  />
-                </button>
-              ))}
-            </div>
-          ) : null}
+            {hasPageImages && pages.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => setShowThumbnailStrip((prev) => !prev)}
+                className="rounded-md border border-[var(--border)] px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent)]/30 hover:text-[var(--text)]"
+              >
+                {showThumbnailStrip ? "Hide thumbnails" : "Show thumbnails"}
+              </button>
+            ) : null}
+          </div>
 
-          <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-raised)]">
-            {hasPageImages && pages[safeActivePageIndex] ? (
-              <div className="relative inline-block min-h-full w-full">
-                <img
-                  src={pages[safeActivePageIndex]}
-                  alt={`Page ${safeActivePageIndex + 1}`}
-                  className="block h-auto w-full"
-                />
-                <div className="pointer-events-none absolute inset-0">
-                  {visibleCitations.map((citation: FieldCitation, index: number) => {
-                    const [x1, y1, x2, y2] = citation.bbox2d;
-                    return (
-                      <div
-                        key={`${citation.blockId}-${index}`}
-                        className="absolute border-2 border-[var(--accent)] bg-[var(--accent)]/15"
-                        style={{
-                          left: `${x1 * 100}%`,
-                          top: `${y1 * 100}%`,
-                          width: `${Math.max((x2 - x1) * 100, 0.5)}%`,
-                          height: `${Math.max((y2 - y1) * 100, 0.5)}%`,
-                        }}
-                      />
-                    );
-                  })}
+          <div className="flex min-h-0 flex-1 gap-3">
+            {hasPageImages && pages.length > 1 && showThumbnailStrip ? (
+              <div className="hidden w-[72px] shrink-0 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] p-1.5 sm:block">
+                <div className="flex flex-col gap-1.5">
+                  {pages.map((src, index) => (
+                    <button
+                      key={`thumb-${index}`}
+                      type="button"
+                      onClick={() => scrollToPage(index)}
+                      className={clsx(
+                        "overflow-hidden rounded border text-left transition-all",
+                        index === safeActivePageIndex
+                          ? "border-[var(--accent)] shadow-sm ring-1 ring-[var(--accent)]/20"
+                          : "border-[var(--border)] opacity-80 hover:opacity-100"
+                      )}
+                    >
+                      <span className="block border-b border-[var(--border)] px-1 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
+                        {index + 1}
+                      </span>
+                      <img src={src} alt={`Page ${index + 1}`} className="h-auto w-full object-cover object-top" />
+                    </button>
+                  ))}
                 </div>
               </div>
-            ) : showPdfFallback && filePreviewUrl ? (
-              <iframe
-                src={filePreviewUrl}
-                title="Document preview"
-                className="h-[70vh] min-h-[400px] w-full border-0"
-              />
-            ) : showImageFallback && filePreviewUrl ? (
-              <img
-                src={filePreviewUrl}
-                alt="Document"
-                className="block h-auto w-full object-contain"
-              />
-            ) : (
-              <div className="flex h-[50vh] min-h-[280px] items-center justify-center p-6 text-center text-sm text-[var(--text-muted)]">
-                No page render available. Extracted fields and coordinates are listed to the right.
-              </div>
-            )}
-          </div>
+            ) : null}
+
+            <div
+              ref={previewScrollRef}
+              className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-raised)]"
+            >
+              {hasPageImages ? (
+                <div className="mx-auto flex w-full max-w-[980px] flex-col gap-4 p-3">
+                  {pages.map((src, pageIndex) => (
+                    <div
+                      key={`page-${pageIndex}`}
+                      ref={(node) => {
+                        pageRefs.current[pageIndex] = node;
+                      }}
+                      data-page-index={pageIndex}
+                      className={clsx(
+                        "overflow-hidden rounded-lg border bg-white shadow-sm",
+                        pageIndex === safeActivePageIndex
+                          ? "border-[var(--accent)]/45"
+                          : "border-[var(--border)]"
+                      )}
+                    >
+                      <p className="border-b border-[var(--border)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)]">
+                        Page {pageIndex + 1}
+                      </p>
+                      <div className="relative">
+                        <img src={src} alt={`Page ${pageIndex + 1}`} className="block h-auto w-full" />
+                        <div className="pointer-events-none absolute inset-0 z-10">
+                          {(visibleCitationsByPage.get(pageIndex) ?? []).map((citation: FieldCitation, index) => {
+                            const [x1, y1, x2, y2] = citation.bbox2d;
+                            return (
+                              <div
+                                key={`${citation.blockId}-${pageIndex}-${index}`}
+                                className="absolute border-[3px] border-[var(--accent)] bg-[var(--accent)]/25 shadow-[0_0_0_1px_rgba(255,255,255,0.8)_inset] ring-2 ring-[var(--accent)]/50"
+                                style={{
+                                  left: `${x1 * 100}%`,
+                                  top: `${y1 * 100}%`,
+                                  width: `${Math.max((x2 - x1) * 100, 0.4)}%`,
+                                  height: `${Math.max((y2 - y1) * 100, 0.4)}%`,
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : showPdfFallback && filePreviewUrl ? (
+                isRenderingPdfPages ? (
+                  <div className="flex h-full min-h-[520px] items-center justify-center p-6 text-center text-sm text-[var(--text-muted)]">
+                    Rendering PDF pages for bbox overlays…
+                  </div>
+                ) : (
+                  <iframe src={filePreviewUrl} title="Document preview" className="h-full min-h-[520px] w-full border-0" />
+                )
+              ) : showImageFallback && filePreviewUrl ? (
+                <img src={filePreviewUrl} alt="Document" className="block h-auto w-full object-contain" />
+              ) : (
+                <div className="flex h-full min-h-[320px] items-center justify-center p-6 text-center text-sm text-[var(--text-muted)]">
+                  No page render available. Extracted fields and coordinates are listed to the right.
+                </div>
+              )}
+            </div>
           </div>
         </article>
 
-        {/* Right: all extractions together (fields + images + tables) */}
-        <aside className="flex min-h-0 flex-col">
+        {/* Right: extractions */}
+        <aside className="flex min-h-0 flex-col lg:max-h-[calc(100vh-11rem)]">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <div className="mb-2 flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-[var(--text-strong)]">Extractions</h2>
@@ -354,17 +624,17 @@ export function RunResultsPanel({
                 if (item.type === "field") {
                   const { field } = item;
                   const isActive = activeField?.fieldPath === field.fieldPath;
+                  const firstCitation = field.citations[0];
                   return (
                     <button
                       key={field.fieldPath}
                       type="button"
                       onMouseEnter={() => {
                         setActiveFieldPath(field.fieldPath);
-                        if (field.citations[0]) setActivePageIndex(field.citations[0].pageIndex);
                       }}
                       onClick={() => {
                         setActiveFieldPath(field.fieldPath);
-                        if (field.citations[0]) setActivePageIndex(field.citations[0].pageIndex);
+                        if (field.citations[0]) scrollToPage(field.citations[0].pageIndex);
                       }}
                       className={clsx(
                         "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
@@ -378,6 +648,15 @@ export function RunResultsPanel({
                       <p className="mt-1 text-[11px] text-[var(--text-muted)]">
                         {field.citations.length} citation{field.citations.length === 1 ? "" : "s"}
                       </p>
+                      {firstCitation ? (
+                        <p className="mt-1 font-mono text-[11px] text-[var(--text-muted)]">
+                          {isRenderableBbox(firstCitation.bbox2d)
+                            ? `Page ${firstCitation.pageIndex + 1} · bbox ${formatBbox(firstCitation.bbox2d)}`
+                            : isFullPageBbox(firstCitation.bbox2d)
+                              ? `Page ${firstCitation.pageIndex + 1} · full page`
+                              : `Page ${firstCitation.pageIndex + 1} · exact bbox unavailable`}
+                        </p>
+                      ) : null}
                     </button>
                   );
                 }
@@ -389,6 +668,9 @@ export function RunResultsPanel({
                   >
                     <p className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
                       {block.label === "image" ? "Image" : "Table"} · Page {block.pageIndex + 1}
+                    </p>
+                    <p className="px-3 pb-1.5 font-mono text-[11px] text-[var(--text-muted)]">
+                      bbox {formatBbox(block.bbox2d)}
                     </p>
                     {block.label === "image" ? (
                       <div className="border-t border-[var(--border)]">
@@ -423,9 +705,40 @@ export function RunResultsPanel({
 
       <details className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
         <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">OCR Markdown</summary>
-        <pre className="mt-3 max-h-60 overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--surface-raised)] p-3 text-xs text-[var(--text)]">
-          {payload?.mdResults || "No markdown output."}
-        </pre>
+        <div className="mt-3">
+          <div className="mb-2 inline-flex rounded-lg border border-[var(--border)] p-1">
+            {(["preview", "raw"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setMarkdownView(option)}
+                className={clsx(
+                  "rounded-md px-2.5 py-1 text-xs transition-colors",
+                  markdownView === option
+                    ? "bg-[var(--accent)]/10 text-[var(--text-strong)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                )}
+              >
+                {option === "preview" ? "Preview" : "Raw"}
+              </button>
+            ))}
+          </div>
+
+          {markdownView === "preview" ? (
+            <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+              <iframe
+                title="OCR Markdown Preview"
+                sandbox=""
+                srcDoc={markdownToPreviewHtml(payload?.mdResults || "")}
+                className="h-[340px] w-full border-0"
+              />
+            </div>
+          ) : (
+            <pre className="max-h-[340px] overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--surface-raised)] p-3 text-xs text-[var(--text)]">
+              {payload?.mdResults || "No markdown output."}
+            </pre>
+          )}
+        </div>
       </details>
     </section>
   );

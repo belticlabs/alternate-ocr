@@ -7,7 +7,10 @@ import { jsonError } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 
-const modeSchema = z.enum(["template", "everything"]);
+const runInputSchema = z.object({
+  mode: z.enum(["template", "everything"]),
+  provider: z.enum(["glm", "mistral"]).default("glm"),
+});
 
 export async function GET(): Promise<NextResponse> {
   try {
@@ -26,7 +29,10 @@ export async function GET(): Promise<NextResponse> {
 export async function POST(request: Request): Promise<NextResponse> {
   try {
     const formData = await request.formData();
-    const mode = modeSchema.parse(formData.get("mode"));
+    const { mode, provider } = runInputSchema.parse({
+      mode: formData.get("mode"),
+      provider: formData.get("provider") ?? undefined,
+    });
     const templateId = String(formData.get("templateId") ?? "");
     const fileEntry = formData.get("file");
 
@@ -39,6 +45,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const result = await startRun({
       mode,
+      provider,
       templateId,
       fileName: fileEntry.name || "upload",
       mimeType,
@@ -58,6 +65,10 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   } catch (error) {
     if (error instanceof z.ZodError) {
+      const issuePath = error.issues[0]?.path?.[0];
+      if (issuePath === "provider") {
+        return jsonError("provider must be either glm or mistral.", 400);
+      }
       return jsonError("mode must be either template or everything.", 400);
     }
 

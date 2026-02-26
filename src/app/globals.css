@@ -8,10 +8,10 @@
   --text-strong: #18181a;
   --text: #26272d;
   --text-muted: #686a74;
-  --accent: #0f7b80;
-  --accent-strong: #0b6266;
+  --accent: #374151;
+  --accent-strong: #1f2937;
   --danger: #b42318;
-  --success: #166534;
+  --success: #b45309;
 }
 
 @theme inline {

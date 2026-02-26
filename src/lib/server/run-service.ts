@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getEnv } from "@/lib/env";
 import { bytesToMegabytes, toIsoNow } from "@/lib/utils";
-import { RunMode } from "@/lib/types";
+import { RunMode, RunProvider } from "@/lib/types";
 import { getRepository } from "./persistence";
 import { enqueueRun } from "./processing-queue";
 import { processRun } from "./run-processor";
@@ -30,6 +30,7 @@ function assertSupportedMimeType(mimeType: string): void {
 
 export interface StartRunInput {
   mode: RunMode;
+  provider: RunProvider;
   templateId: string;
   fileName: string;
   mimeType: string;
@@ -72,6 +73,7 @@ export async function startRun(input: StartRunInput): Promise<{
   const runInput = {
     runId,
     mode: input.mode,
+    provider: input.provider,
     templateId: input.templateId,
     fileName: input.fileName,
     mimeType: input.mimeType,

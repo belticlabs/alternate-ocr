@@ -1,12 +1,21 @@
 import { performance } from "node:perf_hooks";
 import { getRepository } from "./persistence";
 import { extractWithTemplate } from "./extraction";
+import {
+  callMistralOcr,
+  collectMistralMarkdown,
+  mistralPagesToLayoutDetails,
+  MistralOcrPage,
+  parseMistralDocumentAnnotation,
+} from "./mistral";
 import { callLayoutParsing } from "./zai";
 import {
+  ExtractedField,
   ExtractedFieldsPayload,
   LayoutDetail,
   NormalizedBlock,
   RunMode,
+  RunProvider,
   RunStats,
   TimingStats,
 } from "@/lib/types";
@@ -15,6 +24,7 @@ import { safeJsonParse } from "@/lib/utils";
 export interface RunProcessInput {
   runId: string;
   mode: RunMode;
+  provider: RunProvider;
   templateId: string;
   fileName: string;
   mimeType: string;
@@ -135,6 +145,197 @@ function createEverythingPayload(blocks: NormalizedBlock[]): ExtractedFieldsPayl
   };
 }
 
+function flattenObject(
+  value: unknown,
+  pathPrefix = ""
+): Array<{ fieldPath: string; value: unknown }> {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      flattenObject(item, pathPrefix ? `${pathPrefix}[${index}]` : `[${index}]`)
+    );
+  }
+
+  if (typeof value !== "object") {
+    return pathPrefix ? [{ fieldPath: pathPrefix, value }] : [];
+  }
+
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, nestedValue]) => {
+    const nextPath = pathPrefix ? `${pathPrefix}.${key}` : key;
+    return flattenObject(nestedValue, nextPath);
+  });
+}
+
+function normalizeForSearch(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function toSearchableContent(value: string): string {
+  return normalizeForSearch(value.replace(/<[^>]+>/g, " "));
+}
+
+const FULL_PAGE_BBOX_EPSILON = 0.015;
+
+function isFullPageBbox(bbox: [number, number, number, number]): boolean {
+  const [x1, y1, x2, y2] = bbox;
+  return (
+    x1 <= FULL_PAGE_BBOX_EPSILON &&
+    y1 <= FULL_PAGE_BBOX_EPSILON &&
+    x2 >= 1 - FULL_PAGE_BBOX_EPSILON &&
+    y2 >= 1 - FULL_PAGE_BBOX_EPSILON
+  );
+}
+
+function hasUsableBlockBbox(block: NormalizedBlock): boolean {
+  const [x1, y1, x2, y2] = block.bbox2d;
+  return x2 > x1 && y2 > y1 && !isFullPageBbox(block.bbox2d);
+}
+
+function scoreBlockForCitation(block: NormalizedBlock): number {
+  const [x1, y1, x2, y2] = block.bbox2d;
+  const area = Math.max((x2 - x1) * (y2 - y1), 0);
+  const labelBias =
+    block.label === "table" ? 0 : block.label === "image" ? 1 : block.label === "formula" ? 2 : 3;
+  return labelBias * 10 + area;
+}
+
+function pickBestCitationBlock(
+  value: unknown,
+  pageBlocks: NormalizedBlock[]
+): NormalizedBlock | null {
+  if (pageBlocks.length === 0) {
+    return null;
+  }
+
+  const usableBlocks = pageBlocks.filter(hasUsableBlockBbox);
+  if (usableBlocks.length === 0) {
+    // Mistral: only text block per page has bbox [0,0,1,1]; use it when value is in that block so we cite page instead of "unavailable"
+    const needle =
+      typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+        ? normalizeForSearch(String(value)).slice(0, 260)
+        : "";
+    if (needle) {
+      const fullPageTextBlock = pageBlocks.find(
+        (b) =>
+          b.label === "text" &&
+          isFullPageBbox(b.bbox2d) &&
+          toSearchableContent(b.content).includes(needle)
+      );
+      if (fullPageTextBlock) {
+        return fullPageTextBlock;
+      }
+    }
+    return null;
+  }
+
+  const needle =
+    typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+      ? normalizeForSearch(String(value)).slice(0, 260)
+      : "";
+
+  if (needle) {
+    const contentMatches = usableBlocks
+      .filter((block) => toSearchableContent(block.content).includes(needle))
+      .sort((a, b) => scoreBlockForCitation(a) - scoreBlockForCitation(b));
+    if (contentMatches.length > 0) {
+      return contentMatches[0];
+    }
+  }
+
+  const structuralBlocks = usableBlocks
+    .filter((block) => block.label !== "text")
+    .sort((a, b) => scoreBlockForCitation(a) - scoreBlockForCitation(b));
+  if (structuralBlocks.length > 0) {
+    return structuralBlocks[0];
+  }
+
+  return null;
+}
+
+function findCitationPage(value: unknown, pages: MistralOcrPage[]): number | null {
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+    return null;
+  }
+
+  const needle = normalizeForSearch(String(value)).slice(0, 260);
+  if (!needle) {
+    return null;
+  }
+
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+    const haystack = normalizeForSearch(pages[pageIndex]?.markdown ?? "");
+    if (haystack && haystack.includes(needle)) {
+      return pageIndex;
+    }
+  }
+
+  return null;
+}
+
+function createMistralTemplatePayload(
+  values: Record<string, unknown>,
+  pages: MistralOcrPage[],
+  blocks: NormalizedBlock[]
+): { extracted: ExtractedFieldsPayload; citationMs: number } {
+  const citationStart = performance.now();
+  const blocksByPage = new Map<number, NormalizedBlock[]>();
+
+  for (const block of blocks) {
+    const inPage = blocksByPage.get(block.pageIndex) ?? [];
+    inPage.push(block);
+    blocksByPage.set(block.pageIndex, inPage);
+  }
+
+  const flattenedValues = flattenObject(values);
+  const fields: ExtractedField[] = flattenedValues.map((entry) => {
+    const citationPage = findCitationPage(entry.value, pages);
+    const pageBlocks = citationPage != null ? blocksByPage.get(citationPage) ?? [] : [];
+    const citationBlock = citationPage != null ? pickBestCitationBlock(entry.value, pageBlocks) : null;
+
+    let citations: ExtractedField["citations"] = [];
+    if (citationPage != null && citationBlock) {
+      citations = [
+        {
+          fieldPath: entry.fieldPath,
+          pageIndex: citationPage,
+          blockId: citationBlock.id,
+          blockIndex: citationBlock.index,
+          bbox2d: citationBlock.bbox2d,
+          label: citationBlock.label,
+        },
+      ];
+    } else if (citationPage != null) {
+      citations = [
+        {
+          fieldPath: entry.fieldPath,
+          pageIndex: citationPage,
+          blockId: `page:${citationPage}`,
+          blockIndex: -1,
+          bbox2d: [0, 0, 0, 0],
+          label: "text",
+        },
+      ];
+    }
+
+    return {
+      fieldPath: entry.fieldPath,
+      value: entry.value,
+      citations,
+    };
+  });
+
+  return {
+    extracted: {
+      values,
+      fields,
+    },
+    citationMs: performance.now() - citationStart,
+  };
+}
+
 export async function processRun(input: RunProcessInput): Promise<void> {
   const repository = getRepository();
 
@@ -150,49 +351,107 @@ export async function processRun(input: RunProcessInput): Promise<void> {
   await repository.markRunProcessing(input.runId, startedAt);
 
   try {
-    const ocrStart = performance.now();
-    const ocrResponse = await callLayoutParsing(input.fileDataUrl);
-    timers.ocrMs = performance.now() - ocrStart;
-
-    const markdown = ocrResponse.md_results ?? "";
-    const normalized = normalizeLayoutDetails(ocrResponse.layout_details);
-    const pageCount = ocrResponse.data_info?.num_pages ?? normalized.pageCount;
-
     const usage = {
-      ocrPromptTokens: ocrResponse.usage?.prompt_tokens ?? 0,
-      ocrCompletionTokens: ocrResponse.usage?.completion_tokens ?? 0,
+      ocrPromptTokens: 0,
+      ocrCompletionTokens: 0,
       llmPromptTokens: 0,
       llmCompletionTokens: 0,
     };
 
     let extractedPayload: ExtractedFieldsPayload | null = null;
+    let markdown = "";
+    let layoutDetails: LayoutDetail[][] = [];
+    let layoutVisualization: string[] = [];
+    let rawProviderPayload: unknown = null;
+    let pageCount = 0;
+    let normalized = { blocks: [] as NormalizedBlock[], pageCount: 0 };
 
-    if (input.mode === "template") {
-      const template = await repository.getTemplate(input.templateId);
-      if (!template) {
-        throw new Error("Template not found for template-mode extraction.");
+    if (input.provider === "mistral") {
+      let schema: Record<string, unknown> | undefined;
+      let extractionRules = "";
+      if (input.mode === "template") {
+        const template = await repository.getTemplate(input.templateId);
+        if (!template) {
+          throw new Error("Template not found for template-mode extraction.");
+        }
+        schema = safeJsonParse<Record<string, unknown>>(template.schemaJson, {});
+        extractionRules = template.extractionRules;
       }
 
-      const schema = safeJsonParse<Record<string, unknown>>(template.schemaJson, {});
+      const ocrStart = performance.now();
+      const ocrResponse = await callMistralOcr({
+        fileDataUrl: input.fileDataUrl,
+        mimeType: input.mimeType,
+        documentAnnotationSchema: input.mode === "template" ? schema : undefined,
+        documentAnnotationPrompt:
+          input.mode === "template"
+            ? `Extract values that match the schema exactly.\n\nRules:\n${
+                extractionRules || "(none)"
+              }\n\nUse null when a value is missing.`
+            : undefined,
+      });
+      timers.ocrMs = performance.now() - ocrStart;
 
-      const llmStart = performance.now();
-      const extractionResult = await extractWithTemplate(
-        schema,
-        template.extractionRules,
-        markdown,
-        normalized.blocks
-      );
-      timers.llmMs = performance.now() - llmStart;
-      timers.citationMs = extractionResult.citationMs;
+      const pages = ocrResponse.pages ?? [];
+      markdown = collectMistralMarkdown(pages);
+      layoutDetails = mistralPagesToLayoutDetails(pages);
+      layoutVisualization = [];
+      normalized = normalizeLayoutDetails(layoutDetails);
+      pageCount = pages.length > 0 ? pages.length : normalized.pageCount;
+      rawProviderPayload = ocrResponse;
 
-      usage.llmPromptTokens = extractionResult.usage.prompt_tokens ?? 0;
-      usage.llmCompletionTokens = extractionResult.usage.completion_tokens ?? 0;
-
-      extractedPayload = extractionResult.extracted;
+      if (input.mode === "template") {
+        const values = parseMistralDocumentAnnotation(ocrResponse.document_annotation);
+        const mistralTemplatePayload = createMistralTemplatePayload(values, pages, normalized.blocks);
+        extractedPayload = mistralTemplatePayload.extracted;
+        timers.citationMs = mistralTemplatePayload.citationMs;
+      } else {
+        const citationStart = performance.now();
+        extractedPayload = createEverythingPayload(normalized.blocks);
+        timers.citationMs = performance.now() - citationStart;
+      }
     } else {
-      const citationStart = performance.now();
-      extractedPayload = createEverythingPayload(normalized.blocks);
-      timers.citationMs = performance.now() - citationStart;
+      const ocrStart = performance.now();
+      const ocrResponse = await callLayoutParsing(input.fileDataUrl);
+      timers.ocrMs = performance.now() - ocrStart;
+
+      markdown = ocrResponse.md_results ?? "";
+      layoutDetails = ocrResponse.layout_details ?? [];
+      layoutVisualization = ocrResponse.layout_visualization ?? [];
+      normalized = normalizeLayoutDetails(layoutDetails);
+      pageCount = ocrResponse.data_info?.num_pages ?? normalized.pageCount;
+      rawProviderPayload = ocrResponse;
+
+      usage.ocrPromptTokens = ocrResponse.usage?.prompt_tokens ?? 0;
+      usage.ocrCompletionTokens = ocrResponse.usage?.completion_tokens ?? 0;
+
+      if (input.mode === "template") {
+        const template = await repository.getTemplate(input.templateId);
+        if (!template) {
+          throw new Error("Template not found for template-mode extraction.");
+        }
+
+        const schema = safeJsonParse<Record<string, unknown>>(template.schemaJson, {});
+
+        const llmStart = performance.now();
+        const extractionResult = await extractWithTemplate(
+          schema,
+          template.extractionRules,
+          markdown,
+          normalized.blocks
+        );
+        timers.llmMs = performance.now() - llmStart;
+        timers.citationMs = extractionResult.citationMs;
+
+        usage.llmPromptTokens = extractionResult.usage.prompt_tokens ?? 0;
+        usage.llmCompletionTokens = extractionResult.usage.completion_tokens ?? 0;
+
+        extractedPayload = extractionResult.extracted;
+      } else {
+        const citationStart = performance.now();
+        extractedPayload = createEverythingPayload(normalized.blocks);
+        timers.citationMs = performance.now() - citationStart;
+      }
     }
 
     const persistStart = performance.now();
@@ -201,15 +460,15 @@ export async function processRun(input: RunProcessInput): Promise<void> {
       {
         runId: input.runId,
         mdResults: markdown,
-        layoutDetailsJson: JSON.stringify(ocrResponse.layout_details ?? []),
-        layoutVisualizationJson: JSON.stringify(ocrResponse.layout_visualization ?? []),
+        layoutDetailsJson: JSON.stringify(layoutDetails),
+        layoutVisualizationJson: JSON.stringify(layoutVisualization),
         extractedFieldsJson: JSON.stringify(
           extractedPayload ?? {
             values: {},
             fields: [],
           }
         ),
-        rawProviderJson: JSON.stringify(ocrResponse),
+        rawProviderJson: JSON.stringify(rawProviderPayload ?? {}),
       },
       pageCount
     );

@@ -13,8 +13,8 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "GLM OCR Console",
-  description: "In-house GLM OCR extraction console with templates, citations, and run history.",
+  title: "Beltic OCR Playground",
+  description: "In-house OCR extraction console with templates, citations, and run history.",
 };
 
 export default function RootLayout({

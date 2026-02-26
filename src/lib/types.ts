@@ -1,4 +1,5 @@
 export type RunMode = "template" | "everything";
+export type RunProvider = "glm" | "mistral";
 
 export type RunStatus = "queued" | "processing" | "completed" | "failed";
 

@@ -8,10 +8,12 @@ import { RunDetailDto, TemplateDto } from "@/lib/api-types";
 import { fetchRunDetailApi, listTemplatesApi, startRunApi } from "@/lib/client/api";
 
 type RunMode = "template" | "everything";
+type RunProvider = "glm" | "mistral";
 
 export default function EvaluatePage(): React.JSX.Element {
   const [templates, setTemplates] = useState<TemplateDto[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [provider, setProvider] = useState<RunProvider>("glm");
   const [mode, setMode] = useState<RunMode>("template");
   const [templateId, setTemplateId] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -135,6 +137,7 @@ export default function EvaluatePage(): React.JSX.Element {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      formData.append("provider", provider);
       formData.append("mode", mode);
       formData.append("templateId", mode === "template" ? templateId : "");
 
@@ -165,7 +168,7 @@ export default function EvaluatePage(): React.JSX.Element {
     <section className="space-y-5">
       <PageHeader
         title="Evaluate"
-        description="Upload a document, run GLM OCR, and inspect field-level coordinates."
+        description="Upload a document, run OCR with GLM or Mistral, and inspect extraction output."
         rightSlot={
           runDetail ? (
             <button
@@ -193,6 +196,31 @@ export default function EvaluatePage(): React.JSX.Element {
               <p className="mt-1 text-xs text-[var(--text-muted)]">
                 Template mode extracts specific schema fields. Everything mode returns all detected content blocks.
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                Provider
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: "glm", label: "GLM" },
+                  { value: "mistral", label: "Mistral" },
+                ] as const).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setProvider(option.value)}
+                    className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                      provider === option.value
+                        ? "border-[var(--accent)]/35 bg-[var(--accent)]/10 text-[var(--text-strong)]"
+                        : "border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/20"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-2">

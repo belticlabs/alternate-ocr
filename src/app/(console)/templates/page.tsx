@@ -35,6 +35,8 @@ export default function TemplatesPage(): React.JSX.Element {
   const [schemaText, setSchemaText] = useState(getDefaultSchemaText);
   const [draftFiles, setDraftFiles] = useState<File[]>([]);
   const [draftGoal, setDraftGoal] = useState("");
+  const [draftOcrProvider, setDraftOcrProvider] = useState<"glm" | "mistral">("mistral");
+  const [draftLlmProvider, setDraftLlmProvider] = useState<"glm" | "mistral">("mistral");
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -144,10 +146,9 @@ export default function TemplatesPage(): React.JSX.Element {
   }
 
   async function handleDraftSchema(): Promise<void> {
-    const hasFiles = draftFiles.length > 0;
-    const hasGoal = draftGoal.trim().length > 0;
-    if (!hasFiles && !hasGoal) {
-      setErrorMessage("Describe what to extract, or upload a document (or both).");
+    const goal = draftGoal.trim();
+    if (!goal && draftFiles.length === 0) {
+      setErrorMessage("Add an extraction instruction, upload sample files, or both.");
       return;
     }
 
@@ -157,7 +158,9 @@ export default function TemplatesPage(): React.JSX.Element {
 
     try {
       const formData = new FormData();
-      formData.append("explanation", hasGoal ? draftGoal.trim() : "");
+      formData.append("explanation", goal);
+      formData.append("ocrProvider", draftOcrProvider);
+      formData.append("llmProvider", draftLlmProvider);
       draftFiles.forEach((file) => formData.append("files", file));
       const draft = await draftTemplateSchemaApi(formData);
       setSchemaText(JSON.stringify(draft.schema, null, 2));
@@ -165,11 +168,9 @@ export default function TemplatesPage(): React.JSX.Element {
       if (draft.description?.trim()) setDescription(draft.description.trim());
       if (draft.extractionRules?.trim()) setExtractionRules(draft.extractionRules.trim());
       setStatusMessage(
-        hasFiles && hasGoal
-          ? "Template draft generated from your document and description."
-          : hasFiles
-            ? "Template draft generated from your document (all important info). Edit below and save."
-            : "Template draft generated. Edit any field and save when ready."
+        draftFiles.length > 0
+          ? `Template draft generated from ${draftFiles.length} sample file${draftFiles.length === 1 ? "" : "s"} (${draftOcrProvider.toUpperCase()} OCR + ${draftLlmProvider.toUpperCase()} schema model).`
+          : `Template draft generated from instructions (${draftLlmProvider.toUpperCase()} schema model).`
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to draft schema.");
@@ -296,13 +297,53 @@ export default function TemplatesPage(): React.JSX.Element {
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] p-4">
             <div className="mb-3 flex items-center gap-2">
               <Sparkles className="size-4 text-[var(--accent)]" />
-              <p className="text-sm font-medium text-[var(--text-strong)]">Generate template from document or description</p>
+              <p className="text-sm font-medium text-[var(--text-strong)]">Generate template from sample docs + instructions</p>
             </div>
             <p className="mb-3 text-xs text-[var(--text-muted)]">
-              Upload a PDF or image to get a template that extracts all important info (we use document-aware processing). Or describe what to extract, or both.
+              Upload one or more sample documents and describe what to extract (for example: &quot;only extract tables&quot;). We OCR the sample docs, then draft a schema with your chosen model.
             </p>
+            <div className="mb-3 grid gap-3 sm:grid-cols-2">
+              <div>
+                <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">OCR Provider</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["mistral", "glm"] as const).map((provider) => (
+                    <button
+                      key={`ocr-${provider}`}
+                      type="button"
+                      onClick={() => setDraftOcrProvider(provider)}
+                      className={`rounded-lg border px-2 py-1.5 text-xs transition-colors ${
+                        draftOcrProvider === provider
+                          ? "border-[var(--accent)]/35 bg-[var(--accent)]/10 text-[var(--text-strong)]"
+                          : "border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/20"
+                      }`}
+                    >
+                      {provider === "mistral" ? "Mistral OCR" : "GLM OCR"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Schema Model</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["mistral", "glm"] as const).map((provider) => (
+                    <button
+                      key={`llm-${provider}`}
+                      type="button"
+                      onClick={() => setDraftLlmProvider(provider)}
+                      className={`rounded-lg border px-2 py-1.5 text-xs transition-colors ${
+                        draftLlmProvider === provider
+                          ? "border-[var(--accent)]/35 bg-[var(--accent)]/10 text-[var(--text-strong)]"
+                          : "border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/20"
+                      }`}
+                    >
+                      {provider === "mistral" ? "Mistral LLM" : "GLM-5"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
             <div className="mb-3">
-              <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Upload document</span>
+              <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Attach sample files (optional but recommended)</span>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -339,19 +380,19 @@ export default function TemplatesPage(): React.JSX.Element {
                 <Upload className="size-8" />
                 <span className="text-sm font-medium">
                   {draftFiles.length > 0
-                    ? `${draftFiles.length} file${draftFiles.length === 1 ? "" : "s"} selected — click to change`
-                    : "Drop a PDF or image here, or click to choose"}
+                    ? `${draftFiles.length} file${draftFiles.length === 1 ? "" : "s"} selected`
+                    : "Drop files here to analyze sample documents"}
                 </span>
-                <span className="text-[11px]">Leave instruction blank to extract all important info</span>
+                <span className="text-[11px]">For long files, only the first 10 pages are used for drafting</span>
               </button>
             </div>
             <div className="mb-3">
-              <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Instruction (optional if document uploaded)</span>
+              <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">What to extract (optional if files uploaded)</span>
               <textarea
                 value={draftGoal}
                 onChange={(event) => setDraftGoal(event.target.value)}
                 rows={2}
-                placeholder="e.g. Create a template that extracts all important info from this document"
+                placeholder="e.g. Invoice: vendor name, date, line items (description, quantity, unit price, amount), subtotal, tax, total"
                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)]"
               />
             </div>

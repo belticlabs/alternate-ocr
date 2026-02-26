@@ -49,6 +49,11 @@ export class SpacetimeHttpClient {
 
     if (!response.ok) {
       const body = await response.text();
+      if (response.status === 404 && /no such procedure|not found/i.test(body)) {
+        throw new Error(
+          `SpaceTimeDB reducer "${reducerName}" not found (404). Redeploy the SpaceTimeDB module so it includes this reducer, then try again.`
+        );
+      }
       throw new Error(`SpaceTimeDB reducer call failed (${response.status}): ${body}`);
     }
   }

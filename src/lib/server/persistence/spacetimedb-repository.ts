@@ -51,6 +51,12 @@ type RunPayloadRow = {
   raw_provider_json: string;
 };
 
+type SatsOption<T> = { some: T } | { none: [] };
+
+function toSatsOption<T>(value: T | null | undefined): SatsOption<T> {
+  return value == null ? { none: [] } : { some: value };
+}
+
 function toTemplateRecord(row: TemplateRow): TemplateRecord {
   return {
     id: row.id,
@@ -160,7 +166,7 @@ export class SpacetimeRepository implements PersistenceRepository {
         template_id: input.templateId,
         status: input.status,
         provider: input.provider,
-        document_key: input.documentKey ?? null,
+        document_key: toSatsOption(input.documentKey),
         filename: input.filename,
         mime_type: input.mimeType,
         byte_size: input.byteSize,

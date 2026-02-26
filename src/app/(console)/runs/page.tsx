@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/console/page-header";
 import { RunDto } from "@/lib/api-types";
-import { listRunsApi } from "@/lib/client/api";
+import { deleteRunApi, listRunsApi } from "@/lib/client/api";
 
 function formatDate(iso: string): string {
   if (!iso) {
@@ -19,6 +19,7 @@ export default function RunsPage(): React.JSX.Element {
   const [runs, setRuns] = useState<RunDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function loadRuns(): Promise<void> {
     setErrorMessage("");
@@ -29,6 +30,24 @@ export default function RunsPage(): React.JSX.Element {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load runs.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDelete(e: React.MouseEvent, run: RunDto): Promise<void> {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Delete run "${run.filename}"?`)) {
+      return;
+    }
+    setDeletingId(run.id);
+    setErrorMessage("");
+    try {
+      await deleteRunApi(run.id);
+      await loadRuns();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Failed to delete run.");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -54,12 +73,13 @@ export default function RunsPage(): React.JSX.Element {
       />
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
-        <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr] gap-3 border-b border-[var(--border)] px-4 py-3 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+        <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr_auto] gap-3 border-b border-[var(--border)] px-4 py-3 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
           <span>Run</span>
           <span>Status</span>
           <span>Mode</span>
           <span>Pages</span>
           <span>Created</span>
+          <span className="w-8">Actions</span>
         </div>
 
         {loading ? (
@@ -75,17 +95,33 @@ export default function RunsPage(): React.JSX.Element {
 
         {!loading &&
           runs.map((run) => (
-            <Link
+            <div
               key={run.id}
-              href={`/runs/${run.id}`}
-              className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr] gap-3 border-b border-[var(--border)] px-4 py-3 text-sm transition-colors hover:bg-[var(--surface-raised)]"
+              className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.9fr_1fr_auto] gap-3 border-b border-[var(--border)] px-4 py-3 text-sm transition-colors hover:bg-[var(--surface-raised)]"
             >
-              <span className="truncate text-[var(--text-strong)]">{run.filename}</span>
-              <span className="capitalize text-[var(--text)]">{run.status}</span>
-              <span className="capitalize text-[var(--text-muted)]">{run.mode}</span>
-              <span className="text-[var(--text)]">{run.pageCount}</span>
-              <span className="text-[var(--text-muted)]">{formatDate(run.createdAt)}</span>
-            </Link>
+              <Link href={`/runs/${run.id}`} className="contents">
+                <span className="truncate text-[var(--text-strong)]">{run.filename}</span>
+                <span className="capitalize text-[var(--text)]">{run.status}</span>
+                <span className="capitalize text-[var(--text-muted)]">{run.mode}</span>
+                <span className="text-[var(--text)]">{run.pageCount}</span>
+                <span className="text-[var(--text-muted)]">{formatDate(run.createdAt)}</span>
+              </Link>
+              <div className="flex w-8 items-center justify-center">
+                <button
+                  type="button"
+                  onClick={(e) => void handleDelete(e, run)}
+                  disabled={deletingId === run.id}
+                  className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--danger)]/10 hover:text-[var(--danger)] disabled:opacity-50"
+                  title="Delete run"
+                >
+                  {deletingId === run.id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                </button>
+              </div>
+            </div>
           ))}
       </div>
 

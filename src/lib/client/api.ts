@@ -108,3 +108,13 @@ export async function fetchRunDetailApi(id: string): Promise<RunDetailDto> {
   const data = await parseJsonResponse<{ runDetail: RunDetailDto }>(response);
   return data.runDetail;
 }
+
+export async function deleteRunApi(id: string): Promise<void> {
+  const response = await fetch(`/api/runs/${id}`, { method: "DELETE" });
+  if (!response.ok) {
+    const payload = (await response.json()) as Record<string, unknown>;
+    const errorMessage =
+      typeof payload.error === "string" ? payload.error : `Delete failed (${response.status}).`;
+    throw new Error(errorMessage);
+  }
+}

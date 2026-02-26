@@ -272,4 +272,8 @@ export class SpacetimeRepository implements PersistenceRepository {
       payload: payloadRows[0] ? toRunPayloadRecord(payloadRows[0]) : null,
     };
   }
+
+  async deleteRun(id: string): Promise<void> {
+    await this.client.callReducer("run_delete", [{ id }]);
+  }
 }

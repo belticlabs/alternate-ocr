@@ -192,4 +192,9 @@ export class InMemoryRepository implements PersistenceRepository {
       payload,
     };
   }
+
+  async deleteRun(id: string): Promise<void> {
+    store.runs.delete(id);
+    store.payloads.delete(id);
+  }
 }

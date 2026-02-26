@@ -1,20 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/console/page-header";
 import { RunResultsPanel } from "@/components/results/run-results-panel";
 import { RunDetailDto } from "@/lib/api-types";
-import { fetchRunDetailApi } from "@/lib/client/api";
+import { deleteRunApi, fetchRunDetailApi } from "@/lib/client/api";
 
 export default function RunDetailPage(): React.JSX.Element {
+  const router = useRouter();
   const params = useParams<{ id: string }>();
   const runId = params.id;
   const [runDetail, setRunDetail] = useState<RunDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!runId) {
@@ -61,6 +63,20 @@ export default function RunDetailPage(): React.JSX.Element {
     };
   }, [runId]);
 
+  async function handleDelete(): Promise<void> {
+    if (!runId || !runDetail) return;
+    if (!confirm(`Delete this run "${runDetail.run.filename}"?`)) return;
+    setDeleting(true);
+    setErrorMessage("");
+    try {
+      await deleteRunApi(runId);
+      router.push("/runs");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Failed to delete run.");
+      setDeleting(false);
+    }
+  }
+
   return (
     <section className="space-y-5">
       <PageHeader
@@ -99,6 +115,15 @@ export default function RunDetailPage(): React.JSX.Element {
             >
               <RefreshCw className="size-4" />
               Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDelete()}
+              disabled={deleting}
+              className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--danger)] hover:border-[var(--danger)]/50 hover:bg-[var(--danger)]/10 disabled:opacity-50"
+            >
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              Delete
             </button>
           </div>
         }

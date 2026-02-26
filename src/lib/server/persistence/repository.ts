@@ -34,4 +34,5 @@ export interface PersistenceRepository {
   listRuns(): Promise<RunRecord[]>;
   getRun(id: string): Promise<RunRecord | null>;
   getRunDetail(id: string): Promise<RunDetail | null>;
+  deleteRun(id: string): Promise<void>;
 }

@@ -2,6 +2,8 @@ import { z } from "zod";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  /** When set, site requires this code to be entered before accessing any page. */
+  ACCESS_CODE: z.string().min(1).optional(),
   ZAI_API_KEY: z.string().min(1).optional(),
   ZAI_BASE_URL: z.string().url().default("https://api.z.ai/api"),
   GLM_OCR_MODEL: z.string().default("glm-ocr"),

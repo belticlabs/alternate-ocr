@@ -53,5 +53,6 @@ Expected reducer names and argument payloads:
 - `run_store_payload([{ id, md_results, layout_details_json, layout_visualization_json, extracted_fields_json, raw_provider_json, page_count }])`
 - `run_mark_completed([{ id, completed_at, timing_json, stats_json }])`
 - `run_mark_failed([{ id, completed_at, timing_json, error_message }])`
+- `run_delete([{ id }])` — deletes the run and its payload (required for run delete in the UI)
 
 Each reducer call receives a JSON array body, per SpaceTimeDB HTTP API conventions.

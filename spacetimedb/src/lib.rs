@@ -109,6 +109,11 @@ pub struct RunMarkFailedArgs {
     pub error_message: String,
 }
 
+#[derive(SpacetimeType, Clone)]
+pub struct RunDeleteArgs {
+    pub id: String,
+}
+
 #[reducer(init)]
 pub fn init(_ctx: &ReducerContext) {}
 
@@ -261,5 +266,11 @@ pub fn run_mark_failed(ctx: &ReducerContext, input: RunMarkFailedArgs) {
             ..row
         });
     }
+}
+
+#[reducer]
+pub fn run_delete(ctx: &ReducerContext, input: RunDeleteArgs) {
+    ctx.db.run_payload().run_id().delete(&input.id);
+    ctx.db.run().id().delete(&input.id);
 }
 

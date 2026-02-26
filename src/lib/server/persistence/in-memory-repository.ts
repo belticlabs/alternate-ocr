@@ -85,6 +85,7 @@ export class InMemoryRepository implements PersistenceRepository {
       templateId: input.templateId,
       status: input.status,
       provider: input.provider,
+      documentKey: input.documentKey,
       filename: input.filename,
       mimeType: input.mimeType,
       byteSize: input.byteSize,

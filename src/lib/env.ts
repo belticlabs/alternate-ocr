@@ -15,6 +15,10 @@ const envSchema = z.object({
   SPACETIMEDB_BASE_URL: z.string().url().optional(),
   SPACETIMEDB_DATABASE: z.string().min(1).optional(),
   SPACETIMEDB_TOKEN: z.string().min(1).optional(),
+  R2_ACCESS_KEY_ID: z.string().min(1).optional(),
+  R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  R2_BUCKET: z.string().min(1).optional(),
+  R2_ENDPOINT: z.string().url().optional(),
   PROCESS_SYNC_MAX_FILE_MB: z.coerce.number().positive().default(12),
   PROCESS_SYNC_MAX_PAGES: z.coerce.number().int().positive().default(8),
   PROCESS_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(1),
@@ -42,4 +46,8 @@ export function getEnv(): AppEnv {
 
 export function hasSpacetimeConfig(env: AppEnv): boolean {
   return Boolean(env.SPACETIMEDB_BASE_URL && env.SPACETIMEDB_DATABASE && env.SPACETIMEDB_TOKEN);
+}
+
+export function hasR2Config(env: AppEnv): boolean {
+  return Boolean(env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET && env.R2_ENDPOINT);
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/server/persistence";
 import { serializeRunDetail } from "@/lib/server/serializers";
 import { jsonError } from "@/lib/server/http";
+import { deleteDocument } from "@/lib/server/r2";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,19 @@ export async function DELETE(
 
     if (!existing) {
       return jsonError("Run not found.", 404);
+    }
+
+    if (existing.documentKey) {
+      try {
+        await deleteDocument(existing.documentKey);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[runs.delete] Failed to delete stored document", {
+          runId: id,
+          documentKey: existing.documentKey,
+          message,
+        });
+      }
     }
 
     await repository.deleteRun(id);

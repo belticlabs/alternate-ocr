@@ -14,6 +14,7 @@ export interface RunCreateInput {
   templateId: string;
   status: RunStatus;
   provider: "glm" | "mistral";
+  documentKey?: string;
   filename: string;
   mimeType: string;
   byteSize: number;

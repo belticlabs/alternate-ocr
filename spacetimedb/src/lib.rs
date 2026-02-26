@@ -24,7 +24,6 @@ pub struct Run {
     pub mode: String,
     pub template_id: String,
     pub status: String,
-    pub provider: String,
     pub filename: String,
     pub mime_type: String,
     pub byte_size: u64,
@@ -35,6 +34,10 @@ pub struct Run {
     pub created_at: String,
     pub started_at: String,
     pub completed_at: String,
+    #[default(None::<String>)]
+    pub provider: Option<String>,
+    #[default(None::<String>)]
+    pub document_key: Option<String>,
 }
 
 #[table(accessor = run_payload, public)]
@@ -72,6 +75,7 @@ pub struct RunCreateArgs {
     pub template_id: String,
     pub status: String,
     pub provider: String,
+    pub document_key: Option<String>,
     pub filename: String,
     pub mime_type: String,
     pub byte_size: u64,
@@ -187,7 +191,6 @@ pub fn run_create(ctx: &ReducerContext, input: RunCreateArgs) {
         mode: input.mode,
         template_id: input.template_id,
         status: input.status,
-        provider: input.provider,
         filename: input.filename,
         mime_type: input.mime_type,
         byte_size: input.byte_size,
@@ -198,6 +201,8 @@ pub fn run_create(ctx: &ReducerContext, input: RunCreateArgs) {
         created_at,
         started_at: "".to_string(),
         completed_at: "".to_string(),
+        provider: Some(input.provider),
+        document_key: input.document_key,
     };
 
     let existing = ctx.db.run().id().find(&row.id);
@@ -276,4 +281,3 @@ pub fn run_delete(ctx: &ReducerContext, input: RunDeleteArgs) {
     ctx.db.run_payload().run_id().delete(&input.id);
     ctx.db.run().id().delete(&input.id);
 }
-

@@ -29,6 +29,7 @@ type RunRow = {
   template_id: string;
   status: RunRecord["status"];
   provider?: string;
+  document_key?: string | null;
   filename: string;
   mime_type: string;
   byte_size: number;
@@ -71,6 +72,7 @@ function toRunRecord(row: RunRow): RunRecord {
     templateId: row.template_id,
     status: row.status,
     provider,
+    documentKey: typeof row.document_key === "string" && row.document_key.length > 0 ? row.document_key : undefined,
     filename: row.filename,
     mimeType: row.mime_type,
     byteSize: Number(row.byte_size),
@@ -158,6 +160,7 @@ export class SpacetimeRepository implements PersistenceRepository {
         template_id: input.templateId,
         status: input.status,
         provider: input.provider,
+        document_key: input.documentKey ?? null,
         filename: input.filename,
         mime_type: input.mimeType,
         byte_size: input.byteSize,

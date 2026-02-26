@@ -20,6 +20,7 @@ export interface RunRecord {
   templateId: string;
   status: RunStatus;
   provider?: RunProvider;
+  documentKey?: string;
   filename: string;
   mimeType: string;
   byteSize: number;

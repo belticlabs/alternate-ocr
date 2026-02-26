@@ -17,6 +17,8 @@ export default function RunDetailPage(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const filePreviewUrl = runId && runDetail?.run.documentKey ? `/api/runs/${runId}/document` : null;
+  const fileMimeType = runDetail?.run.mimeType ?? null;
 
   useEffect(() => {
     if (!runId) {
@@ -135,7 +137,7 @@ export default function RunDetailPage(): React.JSX.Element {
           Loading run details...
         </div>
       ) : (
-        <RunResultsPanel runDetail={runDetail} />
+        <RunResultsPanel runDetail={runDetail} filePreviewUrl={filePreviewUrl} fileMimeType={fileMimeType} />
       )}
 
       {errorMessage ? <p className="text-sm text-[var(--danger)]">{errorMessage}</p> : null}

@@ -4,6 +4,7 @@ import { bytesToMegabytes, toIsoNow } from "@/lib/utils";
 import { RunMode, RunProvider } from "@/lib/types";
 import { getRepository } from "./persistence";
 import { enqueueRun } from "./processing-queue";
+import { deleteDocument, uploadDocument } from "./r2";
 import { processRun } from "./run-processor";
 
 const SUPPORTED_MIME_TYPES = new Set([
@@ -57,19 +58,39 @@ export async function startRun(input: StartRunInput): Promise<{
 
   const runId = randomUUID();
   const createdAt = toIsoNow();
+  const documentKey = await uploadDocument(runId, input.fileBytes, input.mimeType);
   const fileDataUrl = toDataUrl(input.mimeType, input.fileBytes);
 
-  await repository.createRun({
-    id: runId,
-    mode: input.mode,
-    templateId: input.templateId,
-    status: "queued",
-    provider: input.provider,
-    filename: input.fileName,
-    mimeType: input.mimeType,
-    byteSize: input.fileBytes.length,
-    createdAt,
-  });
+  try {
+    await repository.createRun({
+      id: runId,
+      mode: input.mode,
+      templateId: input.templateId,
+      status: "queued",
+      provider: input.provider,
+      documentKey: documentKey ?? undefined,
+      filename: input.fileName,
+      mimeType: input.mimeType,
+      byteSize: input.fileBytes.length,
+      createdAt,
+    });
+  } catch (error) {
+    if (documentKey) {
+      try {
+        await deleteDocument(documentKey);
+      } catch (cleanupError) {
+        const message =
+          cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+        console.error("[runs.start] Failed to cleanup uploaded document after createRun failure", {
+          runId,
+          documentKey,
+          message,
+        });
+      }
+    }
+
+    throw error;
+  }
 
   const runInput = {
     runId,

@@ -29,7 +29,7 @@ type RunRow = {
   template_id: string;
   status: RunRecord["status"];
   provider?: string;
-  document_key?: string | null;
+  document_key?: unknown;
   filename: string;
   mime_type: string;
   byte_size: number;
@@ -57,6 +57,44 @@ function toSatsOption<T>(value: T | null | undefined): SatsOption<T> {
   return value == null ? { none: [] } : { some: value };
 }
 
+function decodeOptionalString(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value.length > 0 ? value : undefined;
+  }
+
+  if (value == null) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length !== 1) {
+      return undefined;
+    }
+    return decodeOptionalString(value[0]);
+  }
+
+  if (typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if ("some" in record) {
+    return decodeOptionalString(record.some);
+  }
+  if ("none" in record) {
+    return undefined;
+  }
+  if ("value" in record && (record.tag === "some" || record.tag === "Some")) {
+    return decodeOptionalString(record.value);
+  }
+  if ("value" in record && (record.kind === "some" || record.kind === "Some")) {
+    return decodeOptionalString(record.value);
+  }
+
+  return undefined;
+}
+
 function toTemplateRecord(row: TemplateRow): TemplateRecord {
   return {
     id: row.id,
@@ -78,7 +116,7 @@ function toRunRecord(row: RunRow): RunRecord {
     templateId: row.template_id,
     status: row.status,
     provider,
-    documentKey: typeof row.document_key === "string" && row.document_key.length > 0 ? row.document_key : undefined,
+    documentKey: decodeOptionalString(row.document_key),
     filename: row.filename,
     mimeType: row.mime_type,
     byteSize: Number(row.byte_size),

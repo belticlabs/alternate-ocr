@@ -587,7 +587,9 @@ export function RunResultsPanel({
                 <img src={filePreviewUrl} alt="Document" className="block h-auto w-full object-contain" />
               ) : (
                 <div className="flex h-full min-h-[320px] items-center justify-center p-6 text-center text-sm text-[var(--text-muted)]">
-                  No page render available. Extracted fields and coordinates are listed to the right.
+                  {filePreviewUrl
+                    ? "No page render available. Extracted fields and coordinates are listed to the right."
+                    : "No stored document is available for this run. Extracted fields and coordinates are listed to the right."}
                 </div>
               )}
             </div>

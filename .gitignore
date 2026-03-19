@@ -43,5 +43,8 @@ next-env.d.ts
 # IDE
 .cursor/
 
+# Rust build artifacts
+spacetimedb/target/
+
 # app icon (generated)
 src/app/icon.png

@@ -8,7 +8,7 @@ import { RunDetailDto, TemplateDto } from "@/lib/api-types";
 import { fetchRunDetailApi, listTemplatesApi, startRunApi } from "@/lib/client/api";
 
 type RunMode = "template" | "everything";
-type RunProvider = "glm" | "mistral";
+type RunProvider = "glm" | "mistral" | "marker";
 
 export default function EvaluatePage(): React.JSX.Element {
   const [templates, setTemplates] = useState<TemplateDto[]>([]);
@@ -168,7 +168,7 @@ export default function EvaluatePage(): React.JSX.Element {
     <section className="space-y-5">
       <PageHeader
         title="Evaluate"
-        description="Upload a document, run OCR with GLM or Mistral, and inspect extraction output."
+        description="Upload a document, run OCR with GLM, Mistral, or Marker, and inspect extraction output."
         rightSlot={
           runDetail ? (
             <button
@@ -202,10 +202,11 @@ export default function EvaluatePage(): React.JSX.Element {
               <label className="block text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
                 Provider
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {([
                   { value: "glm", label: "GLM", logo: "/zai.png" },
                   { value: "mistral", label: "Mistral", logo: "/m-rainbow.png" },
+                  { value: "marker", label: "Marker", logo: "/modal.png" },
                 ] as const).map((option) => (
                   <button
                     key={option.value}

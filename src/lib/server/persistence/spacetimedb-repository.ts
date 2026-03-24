@@ -109,7 +109,7 @@ function toTemplateRecord(row: TemplateRow): TemplateRecord {
 }
 
 function toRunRecord(row: RunRow): RunRecord {
-  const provider = row.provider === "glm" || row.provider === "mistral" ? row.provider : undefined;
+  const provider = row.provider === "glm" || row.provider === "mistral" || row.provider === "marker" ? row.provider : undefined;
   return {
     id: row.id,
     mode: row.mode,

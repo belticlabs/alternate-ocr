@@ -109,6 +109,8 @@ export default function RunsPage(): React.JSX.Element {
                     <img src="/zai.png" alt="GLM" title="GLM" className="h-7 w-7 shrink-0 object-contain" />
                   ) : run.provider === "mistral" ? (
                     <img src="/m-rainbow.png" alt="Mistral" title="Mistral" className="h-7 w-7 shrink-0 object-contain" />
+                  ) : run.provider === "marker" ? (
+                    <img src="/modal.png" alt="Marker" title="Marker" className="h-7 w-7 shrink-0 object-contain" />
                   ) : (
                     <span className="text-[var(--text-muted)]">—</span>
                   )}

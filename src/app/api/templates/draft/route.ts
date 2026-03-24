@@ -11,7 +11,7 @@ import { jsonError } from "@/lib/server/http";
 export const runtime = "nodejs";
 
 const draftInputSchema = z.object({
-  ocrProvider: z.enum(["glm", "mistral"]).default("mistral"),
+  ocrProvider: z.enum(["glm", "mistral", "marker"]).default("mistral"),
   llmProvider: z.enum(["glm", "mistral"]).default("mistral"),
 });
 
@@ -90,7 +90,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (error instanceof z.ZodError) {
       const issuePath = error.issues[0]?.path?.[0];
       if (issuePath === "ocrProvider") {
-        return jsonError("ocrProvider must be either glm or mistral.", 400);
+        return jsonError("ocrProvider must be glm, mistral, or marker.", 400);
       }
       if (issuePath === "llmProvider") {
         return jsonError("llmProvider must be either glm or mistral.", 400);

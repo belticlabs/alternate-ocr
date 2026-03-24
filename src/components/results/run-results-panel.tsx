@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import { FieldCitation } from "@/lib/types";
+import { ExtractedField, FieldCitation } from "@/lib/types";
 import { RunDetailDto } from "@/lib/api-types";
 
 interface RunResultsPanelProps {
@@ -28,6 +28,22 @@ function formatValue(value: unknown): string {
 
 function formatSeconds(value: number): string {
   return Number.isFinite(value) ? value.toFixed(2) : "0.00";
+}
+
+/** Everything-mode fields `blocks.P:I.content` duplicate the TABLE/Image rich cards when layout blocks are on. */
+function isEverythingModeRichLayoutDuplicate(field: ExtractedField, showLayoutBlocks: boolean): boolean {
+  if (!showLayoutBlocks) {
+    return false;
+  }
+  if (!/^blocks\.\d+:\d+\.content$/.test(field.fieldPath)) {
+    return false;
+  }
+  const label = field.citations[0]?.label;
+  return label === "table" || label === "image";
+}
+
+function everythingFieldPathForRichBlock(pageIndex: number, index: number): string {
+  return `blocks.${pageIndex}:${index}.content`;
 }
 
 const tablePageStyles = `
@@ -443,6 +459,9 @@ export function RunResultsPanel({
   const extractionsInOrder = useMemo((): ExtractionItem[] => {
     const items: ExtractionItem[] = [];
     fields.forEach((field) => {
+      if (isEverythingModeRichLayoutDuplicate(field, showLayoutBlocks)) {
+        return;
+      }
       const page = field.citations[0]?.pageIndex ?? 0;
       const inPage = field.citations[0]?.blockIndex ?? 0;
       items.push({ type: "field", sortKey: [page, inPage], field });
@@ -459,6 +478,17 @@ export function RunResultsPanel({
     });
     return items;
   }, [fields, richBlocks, showLayoutBlocks]);
+
+  const activateRichBlock = useCallback(
+    (block: RichBlock) => {
+      const path = everythingFieldPathForRichBlock(block.pageIndex, block.index);
+      if (fields.some((f) => f.fieldPath === path)) {
+        setActiveFieldPath(path);
+      }
+      scrollToPage(block.pageIndex);
+    },
+    [fields, scrollToPage]
+  );
 
   if (!runDetail) {
     return (
@@ -663,10 +693,27 @@ export function RunResultsPanel({
                   );
                 }
                 const { block } = item;
+                const richFieldPath = everythingFieldPathForRichBlock(block.pageIndex, block.index);
+                const richBlockActive = resolvedActiveFieldPath === richFieldPath;
                 return (
                   <div
                     key={`${block.label}-${block.pageIndex}-${block.index}`}
-                    className="rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] overflow-hidden"
+                    role="button"
+                    tabIndex={0}
+                    onMouseEnter={() => activateRichBlock(block)}
+                    onClick={() => activateRichBlock(block)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        activateRichBlock(block);
+                      }
+                    }}
+                    className={clsx(
+                      "rounded-xl border overflow-hidden transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/35",
+                      richBlockActive
+                        ? "border-[var(--accent)]/40 bg-[var(--accent)]/10 ring-1 ring-[var(--accent)]/20"
+                        : "border-[var(--border)] bg-[var(--surface-raised)] hover:border-[var(--accent)]/25"
+                    )}
                   >
                     <p className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
                       {block.label === "image" ? "Image" : "Table"} · Page {block.pageIndex + 1}

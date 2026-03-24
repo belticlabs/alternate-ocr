@@ -35,7 +35,7 @@ export default function TemplatesPage(): React.JSX.Element {
   const [schemaText, setSchemaText] = useState(getDefaultSchemaText);
   const [draftFiles, setDraftFiles] = useState<File[]>([]);
   const [draftGoal, setDraftGoal] = useState("");
-  const [draftOcrProvider, setDraftOcrProvider] = useState<"glm" | "mistral">("mistral");
+  const [draftOcrProvider, setDraftOcrProvider] = useState<"glm" | "mistral" | "marker">("mistral");
   const [draftLlmProvider, setDraftLlmProvider] = useState<"glm" | "mistral">("mistral");
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -305,8 +305,8 @@ export default function TemplatesPage(): React.JSX.Element {
             <div className="mb-3 grid gap-3 sm:grid-cols-2">
               <div>
                 <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">OCR Provider</span>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["mistral", "glm"] as const).map((provider) => (
+                <div className="grid grid-cols-3 gap-2">
+                  {(["mistral", "glm", "marker"] as const).map((provider) => (
                     <button
                       key={`ocr-${provider}`}
                       type="button"
@@ -318,12 +318,12 @@ export default function TemplatesPage(): React.JSX.Element {
                       }`}
                     >
                       <img
-                        src={provider === "mistral" ? "/m-rainbow.png" : "/zai.png"}
+                        src={provider === "mistral" ? "/m-rainbow.png" : provider === "marker" ? "/modal.png" : "/zai.png"}
                         alt=""
                         className="h-4 w-4 object-contain"
                         aria-hidden
                       />
-                      {provider === "mistral" ? "Mistral OCR" : "GLM OCR"}
+                      {provider === "mistral" ? "Mistral" : provider === "marker" ? "Marker" : "GLM"}
                     </button>
                   ))}
                 </div>

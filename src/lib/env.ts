@@ -12,6 +12,8 @@ const envSchema = z.object({
   MISTRAL_BASE_URL: z.string().url().default("https://api.mistral.ai"),
   MISTRAL_OCR_MODEL: z.string().default("mistral-ocr-latest"),
   MISTRAL_STRUCTURED_MODEL: z.string().default("mistral-large-latest"),
+  MARKER_OCR_URL: z.string().url().default("https://pranavkarra001--marker-gpu-markerocr-convert.modal.run"),
+  MARKER_HEALTH_URL: z.string().url().default("https://pranavkarra001--marker-gpu-markerocr-health.modal.run"),
   SPACETIMEDB_BASE_URL: z.string().url().optional(),
   SPACETIMEDB_DATABASE: z.string().min(1).optional(),
   SPACETIMEDB_TOKEN: z.string().min(1).optional(),

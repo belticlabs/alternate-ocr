@@ -43,6 +43,10 @@ next-env.d.ts
 # IDE
 .cursor/
 
+# Python (Modal workers)
+**/__pycache__/
+*.py[cod]
+
 # Rust build artifacts
 spacetimedb/target/
 

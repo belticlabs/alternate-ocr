@@ -8,6 +8,11 @@ import {
   MistralOcrPage,
   parseMistralDocumentAnnotation,
 } from "./mistral";
+import {
+  callMarkerOcr,
+  collectMarkerMarkdown,
+  markerToLayoutDetails,
+} from "./marker";
 import { callLayoutParsing } from "./zai";
 import {
   ExtractedField,
@@ -405,6 +410,49 @@ export async function processRun(input: RunProcessInput): Promise<void> {
         const mistralTemplatePayload = createMistralTemplatePayload(values, pages, normalized.blocks);
         extractedPayload = mistralTemplatePayload.extracted;
         timers.citationMs = mistralTemplatePayload.citationMs;
+      } else {
+        const citationStart = performance.now();
+        extractedPayload = createEverythingPayload(normalized.blocks);
+        timers.citationMs = performance.now() - citationStart;
+      }
+    } else if (input.provider === "marker") {
+      const ocrStart = performance.now();
+      const ocrResponse = await callMarkerOcr({
+        fileDataUrl: input.fileDataUrl,
+        mimeType: input.mimeType,
+        filename: input.fileName,
+      });
+      timers.ocrMs = performance.now() - ocrStart;
+
+      markdown = collectMarkerMarkdown(ocrResponse);
+      layoutDetails = markerToLayoutDetails(ocrResponse);
+      layoutVisualization = [];
+      normalized = normalizeLayoutDetails(layoutDetails);
+      pageCount = ocrResponse.num_pages > 0 ? ocrResponse.num_pages : normalized.pageCount;
+      rawProviderPayload = ocrResponse;
+
+      if (input.mode === "template") {
+        const template = await repository.getTemplate(input.templateId);
+        if (!template) {
+          throw new Error("Template not found for template-mode extraction.");
+        }
+
+        const schema = safeJsonParse<Record<string, unknown>>(template.schemaJson, {});
+
+        const llmStart = performance.now();
+        const extractionResult = await extractWithTemplate(
+          schema,
+          template.extractionRules,
+          markdown,
+          normalized.blocks
+        );
+        timers.llmMs = performance.now() - llmStart;
+        timers.citationMs = extractionResult.citationMs;
+
+        usage.llmPromptTokens = extractionResult.usage.prompt_tokens ?? 0;
+        usage.llmCompletionTokens = extractionResult.usage.completion_tokens ?? 0;
+
+        extractedPayload = extractionResult.extracted;
       } else {
         const citationStart = performance.now();
         extractedPayload = createEverythingPayload(normalized.blocks);

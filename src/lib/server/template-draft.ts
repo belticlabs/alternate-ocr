@@ -3,6 +3,7 @@ import { LayoutDetail } from "@/lib/types";
 import { summarizeText } from "@/lib/utils";
 import { callChatCompletionJson, callLayoutParsing } from "./zai";
 import { callMistralChatCompletionJson, callMistralOcr } from "./mistral";
+import { callMarkerOcr, collectMarkerMarkdown } from "./marker";
 
 const TEMPLATE_DRAFT_MAX_PAGES = 10;
 const TEMPLATE_DRAFT_MAX_CHARS = 14000;
@@ -28,7 +29,7 @@ export type TemplateDraftResult = {
   extractionRules?: string;
 };
 
-export type TemplateDraftOcrProvider = "glm" | "mistral";
+export type TemplateDraftOcrProvider = "glm" | "mistral" | "marker";
 export type TemplateDraftLlmProvider = "glm" | "mistral";
 
 function parseDraftResult(json: unknown): TemplateDraftResult {
@@ -123,6 +124,22 @@ async function getSampleMarkdown(
       markdown,
       totalPages: pages.length,
       usedPages: selectedPages.length,
+    };
+  }
+
+  if (ocrProvider === "marker") {
+    const ocr = await callMarkerOcr({
+      fileDataUrl: file.dataUrl,
+      mimeType: file.mimeType,
+      filename: file.filename,
+    });
+    const markdown = collectMarkerMarkdown(ocr);
+
+    return {
+      filename: file.filename,
+      markdown,
+      totalPages: ocr.num_pages,
+      usedPages: Math.min(ocr.num_pages, TEMPLATE_DRAFT_MAX_PAGES),
     };
   }
 

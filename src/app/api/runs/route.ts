@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 
 const runInputSchema = z.object({
   mode: z.enum(["template", "everything"]),
-  provider: z.enum(["glm", "mistral"]).default("glm"),
+  provider: z.enum(["glm", "mistral", "marker"]).default("glm"),
 });
 
 export async function GET(): Promise<NextResponse> {
@@ -67,7 +67,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (error instanceof z.ZodError) {
       const issuePath = error.issues[0]?.path?.[0];
       if (issuePath === "provider") {
-        return jsonError("provider must be either glm or mistral.", 400);
+        return jsonError("provider must be glm, mistral, or marker.", 400);
       }
       return jsonError("mode must be either template or everything.", 400);
     }

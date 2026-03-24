@@ -17,7 +17,7 @@ export interface RunDto {
   mode: RunMode;
   templateId: string;
   status: RunStatus;
-  provider?: "glm" | "mistral";
+  provider?: "glm" | "mistral" | "marker";
   documentKey?: string;
   filename: string;
   mimeType: string;

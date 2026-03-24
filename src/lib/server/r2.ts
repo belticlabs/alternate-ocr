@@ -1,3 +1,6 @@
+import { createReadStream } from "node:fs";
+import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { Readable } from "node:stream";
 import {
   DeleteObjectCommand,
@@ -7,6 +10,9 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getEnv, hasR2Config } from "@/lib/env";
+
+/** Stored in DB when R2 is not configured; files live under data/run-documents/{runId}. */
+const LOCAL_DOCUMENT_KEY_PREFIX = "local:";
 
 interface R2Context {
   client: S3Client;
@@ -23,6 +29,26 @@ let cachedClientSignature = "";
 
 function getObjectKey(runId: string): string {
   return `runs/${runId}`;
+}
+
+function getLocalDocumentDir(): string {
+  return path.join(process.cwd(), "data", "run-documents");
+}
+
+function getLocalDocumentPath(runId: string): string {
+  return path.join(getLocalDocumentDir(), runId);
+}
+
+export function isLocalDocumentKey(key: string): boolean {
+  return key.startsWith(LOCAL_DOCUMENT_KEY_PREFIX);
+}
+
+function localKeyForRunId(runId: string): string {
+  return `${LOCAL_DOCUMENT_KEY_PREFIX}${runId}`;
+}
+
+function runIdFromLocalKey(key: string): string {
+  return key.slice(LOCAL_DOCUMENT_KEY_PREFIX.length);
 }
 
 function getContext(): R2Context | null {
@@ -86,6 +112,22 @@ export function isDocumentStorageEnabled(): boolean {
   return getContext() !== null;
 }
 
+async function uploadDocumentLocal(runId: string, buffer: Buffer): Promise<string | null> {
+  try {
+    const dir = getLocalDocumentDir();
+    await mkdir(dir, { recursive: true });
+    await writeFile(getLocalDocumentPath(runId), buffer);
+    return localKeyForRunId(runId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[r2] Local document write failed (set R2_* or fix data/ permissions)", {
+      runId,
+      message,
+    });
+    return null;
+  }
+}
+
 export async function uploadDocument(
   runId: string,
   buffer: Buffer,
@@ -93,7 +135,7 @@ export async function uploadDocument(
 ): Promise<string | null> {
   const context = getContext();
   if (!context) {
-    return null;
+    return uploadDocumentLocal(runId, buffer);
   }
 
   const key = getObjectKey(runId);
@@ -111,6 +153,25 @@ export async function uploadDocument(
 }
 
 export async function getDocumentStream(key: string): Promise<StoredDocumentStream | null> {
+  if (isLocalDocumentKey(key)) {
+    const filePath = getLocalDocumentPath(runIdFromLocalKey(key));
+    try {
+      const st = await stat(filePath);
+      const nodeStream = createReadStream(filePath);
+      const stream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
+      return {
+        stream,
+        contentLength: Number(st.size),
+      };
+    } catch (error) {
+      const err = error as { code?: string };
+      if (err.code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   const context = getContext();
   if (!context) {
     return null;
@@ -142,6 +203,19 @@ export async function getDocumentStream(key: string): Promise<StoredDocumentStre
 }
 
 export async function deleteDocument(key: string): Promise<void> {
+  if (isLocalDocumentKey(key)) {
+    try {
+      await unlink(getLocalDocumentPath(runIdFromLocalKey(key)));
+    } catch (error) {
+      const err = error as { code?: string };
+      if (err.code === "ENOENT") {
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+
   const context = getContext();
   if (!context) {
     return;

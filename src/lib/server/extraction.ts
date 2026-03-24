@@ -45,7 +45,8 @@ function buildBlocksPrompt(blocks: NormalizedBlock[]): string {
   return blocks
     .map((block) => {
       const bbox = block.bbox2d.map((point) => point.toFixed(4)).join(",");
-      const content = summarizeText(block.content || "", 500);
+      const maxChars = block.label === "table" || block.label === "image" ? 4000 : 1200;
+      const content = summarizeText(block.content || "", maxChars);
 
       return `- block_id: ${block.id}\n  page_index: ${block.pageIndex}\n  label: ${block.label}\n  bbox_2d: [${bbox}]\n  content: ${content}`;
     })
@@ -62,7 +63,7 @@ export async function extractWithTemplate(
   usage: { prompt_tokens?: number; completion_tokens?: number };
   citationMs: number;
 }> {
-  const systemPrompt = `You convert OCR output into deterministic structured extraction.\nOutput valid JSON only.\nReturn this shape:\n{\n  "values": <object matching requested schema>,\n  "citations": [{"field_path":"dot.path", "source_block_ids":["page:index"]}]\n}\nRules:\n- Use source_block_ids that exist in provided blocks.\n- Prefer exact textual support for each value.\n- If value is missing, set null and citations [] for that field.`;
+  const systemPrompt = `You convert OCR output into deterministic structured extraction.\nOutput valid JSON only.\nReturn this shape:\n{\n  "values": <object matching requested schema>,\n  "citations": [{"field_path":"dot.path", "source_block_ids":["page:index"]}]\n}\nRules:\n- Copy scalar values verbatim from OCR (same spelling, casing, punctuation, currency symbols) unless extraction rules explicitly say to normalize.\n- Use source_block_ids from the provided list only (format page:index matching block_id).\n- For values that appear inside a table block, cite that table block's block_id; you may list multiple source_block_ids when a field draws from several blocks.\n- Prefer exact textual support; do not invent amounts, dates, or labels not present in OCR.\n- If a value is missing in the document, set null and citations [].`;
 
   const userPrompt = [
     "JSON schema:",
@@ -72,7 +73,7 @@ export async function extractWithTemplate(
     extractionRules || "(none)",
     "",
     "OCR markdown:",
-    summarizeText(markdown, 18000),
+    summarizeText(markdown, 28000),
     "",
     "OCR blocks:",
     buildBlocksPrompt(blocks),

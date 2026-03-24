@@ -248,7 +248,7 @@ export function normalizeMarkerResponse(raw: unknown): MarkerOcrResponse {
         "Marker OCR: response field `text` contains Python repr (e.g. JSONBlockOutput(...)), not JSON. " +
           "Fix the Modal worker: return rendered_output.model_dump(mode=\"json\") or assign the dict from " +
           "json.loads(rendered_output.model_dump_json()) — see Modal’s doc_ocr_jobs example and " +
-          "modal/marker_convert_reference.py in this repo. Do not use str() or repr() on Pydantic models."
+          "modal/marker_modal.py in this repo. Do not use str() or repr() on Pydantic models."
       );
     }
     doc = tryParseJsonTreeString(t);
@@ -316,6 +316,7 @@ export async function callMarkerOcr({
       file: base64,
       filename: markerFilenameForUpload(filename, mimeType),
       output_format: "json",
+      force_ocr: Boolean(env.MARKER_FORCE_OCR),
     }),
     cache: "no-store",
   });

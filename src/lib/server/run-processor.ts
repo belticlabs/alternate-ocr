@@ -341,6 +341,102 @@ function createMistralTemplatePayload(
   };
 }
 
+/** Split Marker-style markdown (`# Page N`) into per-page bodies; else single chunk. */
+function splitMarkdownPagesForCitationSearch(markdown: string): string[] {
+  const parts = markdown.split(/^# Page \d+\s*\n/m);
+  const pages: string[] = [];
+  for (let i = 1; i < parts.length; i++) {
+    pages.push(parts[i] ?? "");
+  }
+  if (pages.length === 0) {
+    return [markdown];
+  }
+  return pages;
+}
+
+function findPageIndexForScalarInMarkdown(value: unknown, markdown: string): number | null {
+  if (value === null || value === undefined || typeof value === "object") {
+    return null;
+  }
+  const needle = normalizeForSearch(String(value)).slice(0, 320);
+  if (needle.length < 2) {
+    return null;
+  }
+  const pages = splitMarkdownPagesForCitationSearch(markdown);
+  for (let i = 0; i < pages.length; i++) {
+    if (normalizeForSearch(pages[i] ?? "").includes(needle)) {
+      return i;
+    }
+  }
+  return null;
+}
+
+function citationHasUsableBBox(bbox: [number, number, number, number]): boolean {
+  const [x1, y1, x2, y2] = bbox;
+  if (x2 <= x1 || y2 <= y1) {
+    return false;
+  }
+  return !isFullPageBbox(bbox);
+}
+
+function fieldNeedsCitationAugmentation(field: ExtractedField): boolean {
+  const cits = field.citations ?? [];
+  if (cits.length === 0) {
+    return true;
+  }
+  return !cits.some((c) => citationHasUsableBBox(c.bbox2d));
+}
+
+/**
+ * When the schema LLM omits or invalidates source_block_ids, infer citations from layout + markdown
+ * (template mode, Marker/GLM).
+ */
+function augmentLlmExtractedCitationsFromLayout(
+  extracted: ExtractedFieldsPayload,
+  blocks: NormalizedBlock[],
+  markdown: string
+): ExtractedFieldsPayload {
+  if (blocks.length === 0 || !markdown.trim()) {
+    return extracted;
+  }
+  const blocksByPage = new Map<number, NormalizedBlock[]>();
+  for (const b of blocks) {
+    const arr = blocksByPage.get(b.pageIndex) ?? [];
+    arr.push(b);
+    blocksByPage.set(b.pageIndex, arr);
+  }
+
+  const fields = extracted.fields.map((field) => {
+    if (!fieldNeedsCitationAugmentation(field)) {
+      return field;
+    }
+    const pageIdx = findPageIndexForScalarInMarkdown(field.value, markdown);
+    if (pageIdx == null) {
+      return field;
+    }
+    const pageBlocks = blocksByPage.get(pageIdx) ?? [];
+    const block = pickBestCitationBlock(field.value, pageBlocks);
+    if (!block) {
+      return field;
+    }
+    return {
+      ...field,
+      citations: [
+        {
+          fieldPath: field.fieldPath,
+          pageIndex: block.pageIndex,
+          blockId: block.id,
+          blockIndex: block.index,
+          bbox2d: block.bbox2d,
+          label: block.label,
+        },
+      ],
+    };
+  });
+
+  return { values: extracted.values, fields };
+}
+
 export async function processRun(input: RunProcessInput): Promise<void> {
   const repository = getRepository();
 
@@ -452,7 +548,11 @@ export async function processRun(input: RunProcessInput): Promise<void> {
         usage.llmPromptTokens = extractionResult.usage.prompt_tokens ?? 0;
         usage.llmCompletionTokens = extractionResult.usage.completion_tokens ?? 0;
 
-        extractedPayload = extractionResult.extracted;
+        extractedPayload = augmentLlmExtractedCitationsFromLayout(
+          extractionResult.extracted,
+          normalized.blocks,
+          markdown
+        );
       } else {
         const citationStart = performance.now();
         extractedPayload = createEverythingPayload(normalized.blocks);
@@ -494,7 +594,11 @@ export async function processRun(input: RunProcessInput): Promise<void> {
         usage.llmPromptTokens = extractionResult.usage.prompt_tokens ?? 0;
         usage.llmCompletionTokens = extractionResult.usage.completion_tokens ?? 0;
 
-        extractedPayload = extractionResult.extracted;
+        extractedPayload = augmentLlmExtractedCitationsFromLayout(
+          extractionResult.extracted,
+          normalized.blocks,
+          markdown
+        );
       } else {
         const citationStart = performance.now();
         extractedPayload = createEverythingPayload(normalized.blocks);

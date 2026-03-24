@@ -14,6 +14,11 @@ const envSchema = z.object({
   MISTRAL_STRUCTURED_MODEL: z.string().default("mistral-large-latest"),
   MARKER_OCR_URL: z.string().url().default("https://pranavkarra001--marker-gpu-markerocr-convert.modal.run"),
   MARKER_HEALTH_URL: z.string().url().default("https://pranavkarra001--marker-gpu-markerocr-health.modal.run"),
+  /** When true, Marker runs full-page OCR (better for scans); slower. Forwarded to Modal as force_ocr. */
+  MARKER_FORCE_OCR: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1" || v === "yes"),
   SPACETIMEDB_BASE_URL: z.string().url().optional(),
   SPACETIMEDB_DATABASE: z.string().min(1).optional(),
   SPACETIMEDB_TOKEN: z.string().min(1).optional(),

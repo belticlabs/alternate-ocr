@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import { ExtractedField, FieldCitation } from "@/lib/types";
+import { ExtractedField } from "@/lib/types";
 import { RunDetailDto } from "@/lib/api-types";
 
 interface RunResultsPanelProps {
@@ -51,8 +51,16 @@ const tablePageStyles = `
   body { margin: 0; padding: 8px; font-family: system-ui, sans-serif; font-size: 12px; color: #1a1a1a; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid #e0e0e0; padding: 6px 10px; text-align: left; }
-  th { background: #f5f5f5; font-weight: 600; }
-  tr:nth-child(even) { background: #fafafa; }
+  th { background: #f5f5f5 !important; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafafa !important; }
+  /* Marker/PDF sometimes yields "redacted" bars via dark text/background; force readable cells */
+  td, th, td *, th * {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    text-shadow: none !important;
+  }
 `;
 
 const TABLE_HEIGHT_SCRIPT = (id: string) =>
@@ -399,19 +407,6 @@ export function RunResultsPanel({
     return () => observer.disconnect();
   }, [pages]);
 
-  const visibleCitationsByPage = useMemo(() => {
-    const byPage = new Map<number, FieldCitation[]>();
-    for (const citation of activeField?.citations ?? []) {
-      if (!isRenderableBbox(citation.bbox2d)) {
-        continue;
-      }
-      const inPage = byPage.get(citation.pageIndex) ?? [];
-      inPage.push(citation);
-      byPage.set(citation.pageIndex, inPage);
-    }
-    return byPage;
-  }, [activeField?.citations]);
-
   type RichBlock = {
     pageIndex: number;
     index: number;
@@ -451,6 +446,59 @@ export function RunResultsPanel({
     });
     return out;
   }, [payload?.layoutDetails]);
+
+  type BboxOverlay = {
+    key: string;
+    bbox2d: [number, number, number, number];
+    layer: "layout" | "fieldIdle" | "fieldActive";
+  };
+
+  /** All field citations + optional table/image layout boxes (template and everything modes). */
+  const documentBboxOverlaysByPage = useMemo(() => {
+    const map = new Map<number, BboxOverlay[]>();
+    const push = (pageIndex: number, entry: BboxOverlay) => {
+      const arr = map.get(pageIndex) ?? [];
+      arr.push(entry);
+      map.set(pageIndex, arr);
+    };
+
+    if (showLayoutBlocks) {
+      richBlocks.forEach((block) => {
+        if (!isRenderableBbox(block.bbox2d)) {
+          return;
+        }
+        push(block.pageIndex, {
+          key: `layout-${block.label}-${block.pageIndex}-${block.index}`,
+          bbox2d: block.bbox2d,
+          layer: "layout",
+        });
+      });
+    }
+
+    for (const field of fields) {
+      const isActiveField = field.fieldPath === resolvedActiveFieldPath;
+      (field.citations ?? []).forEach((citation, i) => {
+        if (!isRenderableBbox(citation.bbox2d)) {
+          return;
+        }
+        push(citation.pageIndex, {
+          key: `citation-${field.fieldPath}-${citation.blockId}-${i}`,
+          bbox2d: citation.bbox2d,
+          layer: isActiveField ? "fieldActive" : "fieldIdle",
+        });
+      });
+    }
+
+    for (const [, list] of map) {
+      list.sort((a, b) => {
+        const rank = (layer: BboxOverlay["layer"]) =>
+          layer === "layout" ? 0 : layer === "fieldIdle" ? 1 : 2;
+        return rank(a.layer) - rank(b.layer);
+      });
+    }
+
+    return map;
+  }, [fields, resolvedActiveFieldPath, richBlocks, showLayoutBlocks]);
 
   type ExtractionItem =
     | { type: "field"; sortKey: [number, number]; field: (typeof fields)[number] }
@@ -585,12 +633,18 @@ export function RunResultsPanel({
                       <div className="relative">
                         <img src={src} alt={`Page ${pageIndex + 1}`} className="block h-auto w-full" />
                         <div className="pointer-events-none absolute inset-0 z-10">
-                          {(visibleCitationsByPage.get(pageIndex) ?? []).map((citation: FieldCitation, index) => {
-                            const [x1, y1, x2, y2] = citation.bbox2d;
+                          {(documentBboxOverlaysByPage.get(pageIndex) ?? []).map((box) => {
+                            const [x1, y1, x2, y2] = box.bbox2d;
+                            const layerClass =
+                              box.layer === "fieldActive"
+                                ? "border-[3px] border-[var(--accent)] bg-[var(--accent)]/25 shadow-[0_0_0_1px_rgba(255,255,255,0.8)_inset] ring-2 ring-[var(--accent)]/50 z-[3]"
+                                : box.layer === "fieldIdle"
+                                  ? "border-2 border-sky-500/45 bg-sky-500/12 ring-1 ring-sky-400/30 z-[2]"
+                                  : "border-2 border-violet-500/40 bg-violet-500/10 ring-1 ring-violet-400/25 z-[1]";
                             return (
                               <div
-                                key={`${citation.blockId}-${pageIndex}-${index}`}
-                                className="absolute border-[3px] border-[var(--accent)] bg-[var(--accent)]/25 shadow-[0_0_0_1px_rgba(255,255,255,0.8)_inset] ring-2 ring-[var(--accent)]/50"
+                                key={box.key}
+                                className={`absolute ${layerClass}`}
                                 style={{
                                   left: `${x1 * 100}%`,
                                   top: `${y1 * 100}%`,
@@ -642,8 +696,8 @@ export function RunResultsPanel({
               </label>
             </div>
             <p className="mb-3 text-[11px] text-[var(--text-muted)]">
-              Schema fields (from your template) in document order.
-              {showLayoutBlocks ? " Layout images/tables from the OCR are included." : ""}
+              Fields in document order. The preview shows all citation boxes (sky) and highlights the selected field
+              (accent); with layout blocks on, table regions also show in violet.
             </p>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               {extractionsInOrder.length === 0 ? (
